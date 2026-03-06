@@ -92,9 +92,12 @@ class Screen1Activity : ComponentActivity() {
         syncButtonState()
     }
 
-    override fun onStop() {
-        super.onStop()
-        CameraFeature.stopPreview()
+    override fun onStart() {
+        super.onStart()
+        // Reattach UI preview surface while keeping camera session alive across screens.
+        if (CameraFeature.isPreviewRunning()) {
+            startCameraPreview()
+        }
         syncButtonState()
     }
 
@@ -162,7 +165,7 @@ class Screen1Activity : ComponentActivity() {
                 dialog.dismiss()
                 val label = labels[which]
                 if (CameraFeature.isPreviewRunning()) {
-                    ensurePermissionAndStartPreview()
+                    startCameraPreview()
                 } else {
                     updateStatus(getString(R.string.camera_status_selected, label))
                 }
@@ -184,7 +187,6 @@ class Screen1Activity : ComponentActivity() {
     private fun startCameraPreview() {
         CameraFeature.startPreview(
             context = this,
-            lifecycleOwner = this,
             previewView = previewView,
             onStarted = {
                 val labelRes = when (CameraFeature.selectedLens()) {

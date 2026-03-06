@@ -17,7 +17,7 @@ import androidx.camera.video.VideoCapture
 import androidx.camera.video.VideoRecordEvent
 import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
-import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.ProcessLifecycleOwner
 
 /**
  * Shared camera pipeline for preview, image capture, and video recording.
@@ -35,6 +35,7 @@ object CameraFeature {
 
     private var selectedLensOption: LensOption = LensOption.BACK
     private var cameraProvider: ProcessCameraProvider? = null
+    private var previewUseCase: Preview? = null
     private var imageCapture: ImageCapture? = null
     private var videoCapture: VideoCapture<Recorder>? = null
     private var activeRecording: Recording? = null
@@ -56,7 +57,6 @@ object CameraFeature {
 
     fun startPreview(
         context: Context,
-        lifecycleOwner: LifecycleOwner,
         previewView: PreviewView,
         onStarted: () -> Unit,
         onUnavailable: () -> Unit,
@@ -71,8 +71,14 @@ object CameraFeature {
             return
         }
 
-        val previewUseCase = Preview.Builder().build().also { preview ->
-            preview.setSurfaceProvider(previewView.surfaceProvider)
+        if (isBound) {
+            previewUseCase?.setSurfaceProvider(previewView.surfaceProvider)
+            onStarted()
+            return
+        }
+
+        val preview = Preview.Builder().build().also {
+            it.setSurfaceProvider(previewView.surfaceProvider)
         }
 
         val imageCaptureUseCase = ImageCapture.Builder().build()
@@ -81,13 +87,14 @@ object CameraFeature {
 
         provider.unbindAll()
         provider.bindToLifecycle(
-            lifecycleOwner,
+            ProcessLifecycleOwner.get(),
             selectedLensOption.toSelector(),
-            previewUseCase,
+            preview,
             imageCaptureUseCase,
             videoCaptureUseCase,
         )
 
+        previewUseCase = preview
         imageCapture = imageCaptureUseCase
         videoCapture = videoCaptureUseCase
         isBound = true
@@ -97,6 +104,9 @@ object CameraFeature {
     fun stopPreview() {
         stopRecording()
         cameraProvider?.unbindAll()
+        previewUseCase = null
+        imageCapture = null
+        videoCapture = null
         isBound = false
     }
 
