@@ -6,15 +6,15 @@ import androidx.activity.enableEdgeToEdge
 import com.example.templei.ui.navigation.TopNavigation
 
 /**
- * Shell host for Screen 2 XML.
+ * Screen 2 hosts the OBS-over-LAN streaming planning workspace.
  *
- * TODO: Hook up button handlers and section state.
+ * The current implementation is intentionally UI-first and keeps Screen 1 capture behavior untouched.
+ * TODO: Wire these controls to a StreamService/CaptureCoordinator in a follow-up iteration.
  */
 class Screen2Activity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        // Shell-only binding to XML until feature logic is implemented.
         setContentView(R.layout.activity_screen2)
         TopNavigation.bind(activity = this, currentDestination = Screen2Activity::class.java)
     }
