@@ -183,10 +183,13 @@ object CameraFeature {
         val pendingRecording = captureUseCase.output
             .prepareRecording(context, mediaStoreOutput)
 
+        // Keep recording session alive across Activity switches while the app is in foreground.
+        val persistentRecording = pendingRecording.asPersistentRecording()
+
         val configuredRecording = if (withAudio) {
-            pendingRecording.withAudioEnabled()
+            persistentRecording.withAudioEnabled()
         } else {
-            pendingRecording
+            persistentRecording
         }
 
         activeRecording = configuredRecording
