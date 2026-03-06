@@ -53,7 +53,7 @@ object CameraFeature {
         }
 
         val previewUseCase = Preview.Builder().build().also { preview ->
-            preview.surfaceProvider = previewView.surfaceProvider
+            preview.setSurfaceProvider(previewView.surfaceProvider)
         }
 
         provider.unbindAll()
