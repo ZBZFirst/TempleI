@@ -75,6 +75,39 @@
                 android:text="@string/camera_stop_button" />
         </LinearLayout>
 
+        <!-- Secondary controls for media capture while preview is active. -->
+        <LinearLayout
+            android:id="@+id/captureControlsRow"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="24dp"
+            android:layout_marginTop="12dp"
+            android:layout_marginEnd="24dp"
+            android:gravity="center"
+            android:orientation="horizontal"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toBottomOf="@id/cameraControlsRow">
+
+            <Button
+                android:id="@+id/takePictureButton"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/camera_picture_button" />
+
+            <Space
+                android:layout_width="8dp"
+                android:layout_height="wrap_content" />
+
+            <Button
+                android:id="@+id/recordVideoButton"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/camera_record_button" />
+        </LinearLayout>
+
         <TextView
             android:id="@+id/cameraStatusText"
             android:layout_width="0dp"
@@ -86,7 +119,7 @@
             android:text="@string/camera_status_idle"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@id/cameraControlsRow" />
+            app:layout_constraintTop_toBottomOf="@id/captureControlsRow" />
 
         <androidx.camera.view.PreviewView
             android:id="@+id/cameraPreviewView"

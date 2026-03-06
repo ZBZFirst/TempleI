@@ -1,6 +1,7 @@
 package com.example.templei
 
 import android.Manifest
+import android.app.AlertDialog
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.widget.Button
@@ -8,7 +9,6 @@ import android.widget.TextView
 import androidx.activity.ComponentActivity
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import android.app.AlertDialog
 import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
 import com.example.templei.feature.camera.CameraFeature
@@ -22,6 +22,8 @@ class Screen1Activity : ComponentActivity() {
     private lateinit var statusText: TextView
     private lateinit var startButton: Button
     private lateinit var stopButton: Button
+    private lateinit var pictureButton: Button
+    private lateinit var recordButton: Button
 
     private val requestCameraPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -42,6 +44,8 @@ class Screen1Activity : ComponentActivity() {
         statusText = findViewById(R.id.cameraStatusText)
         startButton = findViewById(R.id.startCameraButton)
         stopButton = findViewById(R.id.stopCameraButton)
+        pictureButton = findViewById(R.id.takePictureButton)
+        recordButton = findViewById(R.id.recordVideoButton)
 
         findViewById<Button>(R.id.selectCameraButton).setOnClickListener { showCameraSelector() }
         startButton.setOnClickListener { ensurePermissionAndStartPreview() }
@@ -49,6 +53,42 @@ class Screen1Activity : ComponentActivity() {
             CameraFeature.stopPreview()
             updateStatus(getString(R.string.camera_status_stopped))
             syncButtonState()
+        }
+        pictureButton.setOnClickListener {
+            ensurePermissionAndStartPreview()
+            CameraFeature.takePicture(
+                context = this,
+                onSaved = { uri ->
+                    updateStatus(getString(R.string.camera_picture_saved, uri))
+                },
+                onError = {
+                    updateStatus(getString(R.string.camera_capture_error))
+                },
+            )
+        }
+        recordButton.setOnClickListener {
+            ensurePermissionAndStartPreview()
+            if (CameraFeature.isVideoRecording()) {
+                CameraFeature.stopRecording()
+                updateStatus(getString(R.string.camera_recording_stopping))
+                syncButtonState()
+            } else {
+                CameraFeature.startRecording(
+                    context = this,
+                    onStarted = {
+                        updateStatus(getString(R.string.camera_recording_started))
+                        syncButtonState()
+                    },
+                    onSaved = { uri ->
+                        updateStatus(getString(R.string.camera_video_saved, uri))
+                        syncButtonState()
+                    },
+                    onError = {
+                        updateStatus(getString(R.string.camera_capture_error))
+                        syncButtonState()
+                    },
+                )
+            }
         }
 
         syncButtonState()
@@ -91,7 +131,9 @@ class Screen1Activity : ComponentActivity() {
 
     private fun ensurePermissionAndStartPreview() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
-            startCameraPreview()
+            if (!CameraFeature.isPreviewRunning()) {
+                startCameraPreview()
+            }
         } else {
             requestCameraPermission.launch(Manifest.permission.CAMERA)
         }
@@ -99,7 +141,6 @@ class Screen1Activity : ComponentActivity() {
 
     private fun startCameraPreview() {
         CameraFeature.startPreview(
-            context = this,
             lifecycleOwner = this,
             previewView = previewView,
             onStarted = {
@@ -123,7 +164,17 @@ class Screen1Activity : ComponentActivity() {
 
     private fun syncButtonState() {
         val running = CameraFeature.isPreviewRunning()
+        val recording = CameraFeature.isVideoRecording()
+
         startButton.isEnabled = !running
-        stopButton.isEnabled = running
+        stopButton.isEnabled = running && !recording
+        pictureButton.isEnabled = running && !recording
+
+        recordButton.isEnabled = running
+        recordButton.text = if (recording) {
+            getString(R.string.camera_stop_record_button)
+        } else {
+            getString(R.string.camera_record_button)
+        }
     }
 }

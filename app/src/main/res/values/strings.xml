@@ -29,4 +29,13 @@
     <string name="camera_selector_front">Front camera</string>
     <string name="camera_selector_back">Back camera</string>
 
+    <string name="camera_picture_button">Picture</string>
+    <string name="camera_record_button">Record</string>
+    <string name="camera_stop_record_button">Stop Recording</string>
+    <string name="camera_recording_started">Recording video…</string>
+    <string name="camera_recording_stopping">Stopping recording…</string>
+    <string name="camera_picture_saved">Picture saved: %1$s</string>
+    <string name="camera_video_saved">Video saved: %1$s</string>
+    <string name="camera_capture_error">Capture failed. Start preview and try again.</string>
+
 </resources>
