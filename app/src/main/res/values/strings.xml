@@ -37,5 +37,6 @@
     <string name="camera_picture_saved">Picture saved: %1$s</string>
     <string name="camera_video_saved">Video saved: %1$s</string>
     <string name="camera_capture_error">Capture failed. Start preview and try again.</string>
+    <string name="camera_status_microphone_required">Microphone permission required for video audio</string>
 
 </resources>

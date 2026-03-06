@@ -34,6 +34,25 @@ class Screen1Activity : ComponentActivity() {
             }
         }
 
+    private val requestCameraAndMicPermission =
+        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants ->
+            val cameraGranted = grants[Manifest.permission.CAMERA] == true
+            val micGranted = grants[Manifest.permission.RECORD_AUDIO] == true
+
+            if (!cameraGranted) {
+                updateStatus(getString(R.string.camera_status_permission_required))
+                return@registerForActivityResult
+            }
+
+            if (!micGranted) {
+                updateStatus(getString(R.string.camera_status_microphone_required))
+                return@registerForActivityResult
+            }
+
+            ensurePermissionAndStartPreview()
+            startRecordingWithAudio()
+        }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -67,28 +86,7 @@ class Screen1Activity : ComponentActivity() {
             )
         }
         recordButton.setOnClickListener {
-            ensurePermissionAndStartPreview()
-            if (CameraFeature.isVideoRecording()) {
-                CameraFeature.stopRecording()
-                updateStatus(getString(R.string.camera_recording_stopping))
-                syncButtonState()
-            } else {
-                CameraFeature.startRecording(
-                    context = this,
-                    onStarted = {
-                        updateStatus(getString(R.string.camera_recording_started))
-                        syncButtonState()
-                    },
-                    onSaved = { uri ->
-                        updateStatus(getString(R.string.camera_video_saved, uri))
-                        syncButtonState()
-                    },
-                    onError = {
-                        updateStatus(getString(R.string.camera_capture_error))
-                        syncButtonState()
-                    },
-                )
-            }
+            ensureCameraAndMicAndRecord()
         }
 
         syncButtonState()
@@ -98,6 +96,50 @@ class Screen1Activity : ComponentActivity() {
         super.onStop()
         CameraFeature.stopPreview()
         syncButtonState()
+    }
+
+    private fun ensureCameraAndMicAndRecord() {
+        if (CameraFeature.isVideoRecording()) {
+            CameraFeature.stopRecording()
+            updateStatus(getString(R.string.camera_recording_stopping))
+            syncButtonState()
+            return
+        }
+
+        val cameraGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+        val micGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+
+        if (!cameraGranted || !micGranted) {
+            requestCameraAndMicPermission.launch(
+                arrayOf(
+                    Manifest.permission.CAMERA,
+                    Manifest.permission.RECORD_AUDIO,
+                ),
+            )
+            return
+        }
+
+        ensurePermissionAndStartPreview()
+        startRecordingWithAudio()
+    }
+
+    private fun startRecordingWithAudio() {
+        CameraFeature.startRecording(
+            context = this,
+            withAudio = true,
+            onStarted = {
+                updateStatus(getString(R.string.camera_recording_started))
+                syncButtonState()
+            },
+            onSaved = { uri ->
+                updateStatus(getString(R.string.camera_video_saved, uri))
+                syncButtonState()
+            },
+            onError = {
+                updateStatus(getString(R.string.camera_capture_error))
+                syncButtonState()
+            },
+        )
     }
 
     private fun showCameraSelector() {

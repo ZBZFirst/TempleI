@@ -142,6 +142,7 @@ object CameraFeature {
 
     fun startRecording(
         context: Context,
+        withAudio: Boolean,
         onStarted: () -> Unit,
         onSaved: (String) -> Unit,
         onError: () -> Unit,
@@ -167,8 +168,16 @@ object CameraFeature {
             .setContentValues(values)
             .build()
 
-        activeRecording = captureUseCase.output
+        val pendingRecording = captureUseCase.output
             .prepareRecording(context, mediaStoreOutput)
+
+        val configuredRecording = if (withAudio) {
+            pendingRecording.withAudioEnabled()
+        } else {
+            pendingRecording
+        }
+
+        activeRecording = configuredRecording
             .start(ContextCompat.getMainExecutor(context)) { event ->
                 when (event) {
                     is VideoRecordEvent.Start -> {
