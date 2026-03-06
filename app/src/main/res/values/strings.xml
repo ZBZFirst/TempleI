@@ -16,4 +16,27 @@
     <string name="screen3TitleText">Screen 3</string>
     <string name="screen4TitleText">Screen 4</string>
 
+    <string name="camera_select_button">Select Camera</string>
+    <string name="camera_start_button">Start Camera</string>
+    <string name="camera_stop_button">Stop Camera</string>
+    <string name="camera_status_idle">Camera idle</string>
+    <string name="camera_status_running">Camera running: %1$s</string>
+    <string name="camera_status_stopped">Camera stopped</string>
+    <string name="camera_status_permission_required">Camera permission required</string>
+    <string name="camera_status_selected">Camera selected: %1$s</string>
+    <string name="camera_status_unavailable">No camera available on this device</string>
+    <string name="camera_selector_dialog_title">Choose camera</string>
+    <string name="camera_selector_front">Front camera</string>
+    <string name="camera_selector_back">Back camera</string>
+
+    <string name="camera_picture_button">Picture</string>
+    <string name="camera_record_button">Record</string>
+    <string name="camera_stop_record_button">Stop Recording</string>
+    <string name="camera_recording_started">Recording video…</string>
+    <string name="camera_recording_stopping">Stopping recording…</string>
+    <string name="camera_picture_saved">Picture saved: %1$s</string>
+    <string name="camera_video_saved">Video saved: %1$s</string>
+    <string name="camera_capture_error">Capture failed. Start preview and try again.</string>
+    <string name="camera_status_microphone_required">Microphone permission required for video audio</string>
+
 </resources>
