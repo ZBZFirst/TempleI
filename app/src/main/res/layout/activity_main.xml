@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="24dp"
+    tools:context=".MainActivity">
+
+    <TextView
+        android:id="@+id/titleText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="24dp"
+        android:gravity="center"
+        android:text="@string/mainScreenText"
+        android:textSize="28sp"
+        android:textStyle="bold" />
+
+    <androidx.constraintlayout.widget.ConstraintLayout
+        android:id="@+id/frameLayout"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent">
+
+        <LinearLayout
+            android:id="@+id/mainMenuGrid"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="16dp"
+            android:layout_marginTop="64dp"
+            android:layout_marginEnd="16dp"
+            android:orientation="vertical"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toTopOf="parent">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal">
+
+                <Button
+                    android:id="@+id/screen1Button"
+                    android:layout_width="0dp"
+                    android:layout_height="100dp"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="8dp"
+                    android:background="@color/purple_200"
+                    android:text="@string/button1text"
+                    android:autoSizeTextType="uniform"
+                    android:autoSizeMinTextSize="8sp"
+                    android:autoSizeMaxTextSize="16sp"
+                    android:autoSizeStepGranularity="1sp" />
+
+                <Button
+                    android:id="@+id/screen2Button"
+                    android:layout_width="0dp"
+                    android:layout_height="100dp"
+                    android:layout_weight="1"
+                    android:layout_marginStart="8dp"
+                    android:background="@color/purple_200"
+                    android:text="@string/button2text"
+                    android:autoSizeTextType="uniform"
+                    android:autoSizeMinTextSize="8sp"
+                    android:autoSizeMaxTextSize="16sp"
+                    android:autoSizeStepGranularity="1sp" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:orientation="horizontal">
+
+                <Button
+                    android:id="@+id/screen3Button"
+                    android:layout_width="0dp"
+                    android:layout_height="100dp"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="8dp"
+                    android:background="@color/purple_200"
+                    android:text="@string/button3text"
+                    android:autoSizeTextType="uniform"
+                    android:autoSizeMinTextSize="8sp"
+                    android:autoSizeMaxTextSize="16sp"
+                    android:autoSizeStepGranularity="1sp" />
+
+                <Button
+                    android:id="@+id/screen4Button"
+                    android:layout_width="0dp"
+                    android:layout_height="100dp"
+                    android:layout_weight="1"
+                    android:layout_marginStart="8dp"
+                    android:background="@color/purple_200"
+                    android:text="@string/button4text"
+                    android:autoSizeTextType="uniform"
+                    android:autoSizeMinTextSize="8sp"
+                    android:autoSizeMaxTextSize="16sp"
+                    android:autoSizeStepGranularity="1sp" />
+            </LinearLayout>
+
+        </LinearLayout>
+
+    </androidx.constraintlayout.widget.ConstraintLayout>
+
+</LinearLayout>

@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal">
+
+    <!-- Shared top navigation shell used across all screens. -->
+    <Button
+        android:id="@+id/navButtonScreen1"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:text="@string/button1text"
+        android:autoSizeTextType="uniform"
+        android:autoSizeMinTextSize="8sp"
+        android:autoSizeMaxTextSize="16sp"
+        android:autoSizeStepGranularity="1sp" />
+
+    <Button
+        android:id="@+id/navButtonScreen2"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:text="@string/button2text"
+        android:autoSizeTextType="uniform"
+        android:autoSizeMinTextSize="8sp"
+        android:autoSizeMaxTextSize="16sp"
+        android:autoSizeStepGranularity="1sp" />
+
+    <Button
+        android:id="@+id/navButtonScreen3"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:text="@string/button3text"
+        android:autoSizeTextType="uniform"
+        android:autoSizeMinTextSize="8sp"
+        android:autoSizeMaxTextSize="16sp"
+        android:autoSizeStepGranularity="1sp" />
+
+    <Button
+        android:id="@+id/navButtonScreen4"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:text="@string/button4text"
+        android:autoSizeTextType="uniform"
+        android:autoSizeMinTextSize="8sp"
+        android:autoSizeMaxTextSize="16sp"
+        android:autoSizeStepGranularity="1sp" />
+</LinearLayout>

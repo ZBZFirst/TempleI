@@ -1,0 +1,19 @@
+<resources>
+    <string name="app_name">TempleI</string>
+    <string name="palette_title">XML Palette Canvas</string>
+    <string name="palette_button">Button</string>
+    <string name="palette_text">Text</string>
+    <string name="palette_card">Card</string>
+    <string name="palette_hint">Open activity_main.xml in Design or Split mode to use Android Studio Palette panel and drag new views onto this screen.</string>
+    <string name="palette_placeholder_text">Palette text placeholder</string>
+    <string name="button1text">Go to Screen 1</string>
+    <string name="button2text">Go to Screen 2</string>
+    <string name="button3text">Go to Screen 3</string>
+    <string name="button4text">Go to Screen 4</string>
+    <string name="mainScreenText">Main Screen</string>
+    <string name="screen1TitleText">Screen 1</string>
+    <string name="screen2TitleText">Screen 2</string>
+    <string name="screen3TitleText">Screen 3</string>
+    <string name="screen4TitleText">Screen 4</string>
+
+</resources>

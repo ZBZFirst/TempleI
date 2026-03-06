@@ -1,0 +1,374 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical">
+
+
+    <!-- Shell layout for Screen 4.
+         TODO: Replace static placeholder controls with feature-backed UI behavior. -->
+    <TextView
+        android:id="@+id/screenTitle"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="24dp"
+        android:gravity="center"
+        android:text="@string/screen4TitleText"
+        android:textSize="32sp" />
+
+    <androidx.constraintlayout.widget.ConstraintLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent">
+        <include
+            android:id="@+id/topNavInclude"
+            layout="@layout/view_top_navigation"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="24dp"
+            android:layout_marginTop="16dp"
+            android:layout_marginEnd="24dp"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toTopOf="parent" />
+
+        <ScrollView
+            android:id="@+id/dataScreenScrollView"
+            android:layout_width="0dp"
+            android:layout_height="0dp"
+            android:layout_marginStart="24dp"
+            android:layout_marginTop="24dp"
+            android:layout_marginEnd="24dp"
+            android:layout_marginBottom="24dp"
+            android:fillViewport="true"
+            app:layout_constraintTop_toBottomOf="@id/topNavInclude"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent">
+
+            <LinearLayout
+                android:id="@+id/dataScreenBody"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp"
+                android:background="@color/debug_warning">
+
+                <TextView
+                    android:id="@+id/dataSectionTitle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Data Table Controls"
+                    android:textSize="20sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/rowDisplayLabel"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="16dp"
+                    android:text="Rows Visible: 20"
+                    android:textSize="16sp" />
+
+                <SeekBar
+                    android:id="@+id/rowDisplaySlider"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:max="100"
+                    android:progress="20" />
+
+                <LinearLayout
+                    android:id="@+id/rowActionRow1"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="16dp"
+                    android:orientation="horizontal">
+
+                    <Button
+                        android:id="@+id/addRowButton"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Add Row" />
+
+                    <Space
+                        android:layout_width="12dp"
+                        android:layout_height="wrap_content" />
+
+                    <Button
+                        android:id="@+id/deleteRowButton"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Delete Row" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/rowActionRow2"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:orientation="horizontal">
+
+                    <Button
+                        android:id="@+id/selectRowButton"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Select Row" />
+
+                    <Space
+                        android:layout_width="12dp"
+                        android:layout_height="wrap_content" />
+
+                    <Button
+                        android:id="@+id/editRowButton"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Edit Row" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/rowActionRow3"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:orientation="horizontal">
+
+                    <Button
+                        android:id="@+id/deleteSelectedRowButton"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Delete Selected" />
+
+                    <Space
+                        android:layout_width="12dp"
+                        android:layout_height="wrap_content" />
+
+                    <Button
+                        android:id="@+id/addColumnButton"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Add Column" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/tablePreviewLabel"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="24dp"
+                    android:text="Table Preview"
+                    android:textSize="18sp"
+                    android:textStyle="bold" />
+
+                <HorizontalScrollView
+                    android:id="@+id/tableHorizontalScroll"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp">
+
+                    <LinearLayout
+                        android:id="@+id/tableContainer"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical">
+
+                        <!-- Header Row -->
+                        <TableRow
+                            android:id="@+id/tableHeaderRow"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:background="@android:color/darker_gray">
+
+                            <TextView
+                                android:layout_width="120dp"
+                                android:layout_height="wrap_content"
+                                android:padding="8dp"
+                                android:text="Row ID"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                android:layout_width="120dp"
+                                android:layout_height="wrap_content"
+                                android:padding="8dp"
+                                android:text="Column A"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                android:layout_width="120dp"
+                                android:layout_height="wrap_content"
+                                android:padding="8dp"
+                                android:text="Column B"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                android:layout_width="120dp"
+                                android:layout_height="wrap_content"
+                                android:padding="8dp"
+                                android:text="Column C"
+                                android:textStyle="bold" />
+                        </TableRow>
+
+                        <!-- Sample Row 1 -->
+                        <TableRow
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content">
+
+                            <TextView
+                                android:layout_width="120dp"
+                                android:layout_height="wrap_content"
+                                android:padding="8dp"
+                                android:text="1" />
+
+                            <TextView
+                                android:layout_width="120dp"
+                                android:layout_height="wrap_content"
+                                android:padding="8dp"
+                                android:text="A1" />
+
+                            <TextView
+                                android:layout_width="120dp"
+                                android:layout_height="wrap_content"
+                                android:padding="8dp"
+                                android:text="B1" />
+
+                            <TextView
+                                android:layout_width="120dp"
+                                android:layout_height="wrap_content"
+                                android:padding="8dp"
+                                android:text="C1" />
+                        </TableRow>
+
+                        <!-- Sample Row 2 -->
+                        <TableRow
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content">
+
+                            <TextView
+                                android:layout_width="120dp"
+                                android:layout_height="wrap_content"
+                                android:padding="8dp"
+                                android:text="2" />
+
+                            <TextView
+                                android:layout_width="120dp"
+                                android:layout_height="wrap_content"
+                                android:padding="8dp"
+                                android:text="A2" />
+
+                            <TextView
+                                android:layout_width="120dp"
+                                android:layout_height="wrap_content"
+                                android:padding="8dp"
+                                android:text="B2" />
+
+                            <TextView
+                                android:layout_width="120dp"
+                                android:layout_height="wrap_content"
+                                android:padding="8dp"
+                                android:text="C2" />
+                        </TableRow>
+
+                        <!-- Sample Row 3 -->
+                        <TableRow
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content">
+
+                            <TextView
+                                android:layout_width="120dp"
+                                android:layout_height="wrap_content"
+                                android:padding="8dp"
+                                android:text="3" />
+
+                            <TextView
+                                android:layout_width="120dp"
+                                android:layout_height="wrap_content"
+                                android:padding="8dp"
+                                android:text="A3" />
+
+                            <TextView
+                                android:layout_width="120dp"
+                                android:layout_height="wrap_content"
+                                android:padding="8dp"
+                                android:text="B3" />
+
+                            <TextView
+                                android:layout_width="120dp"
+                                android:layout_height="wrap_content"
+                                android:padding="8dp"
+                                android:text="C3" />
+                        </TableRow>
+
+                        <!-- Sample Row 4 -->
+                        <TableRow
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content">
+
+                            <TextView
+                                android:layout_width="120dp"
+                                android:layout_height="wrap_content"
+                                android:padding="8dp"
+                                android:text="4" />
+
+                            <TextView
+                                android:layout_width="120dp"
+                                android:layout_height="wrap_content"
+                                android:padding="8dp"
+                                android:text="A4" />
+
+                            <TextView
+                                android:layout_width="120dp"
+                                android:layout_height="wrap_content"
+                                android:padding="8dp"
+                                android:text="B4" />
+
+                            <TextView
+                                android:layout_width="120dp"
+                                android:layout_height="wrap_content"
+                                android:padding="8dp"
+                                android:text="C4" />
+                        </TableRow>
+
+                        <!-- Sample Row 5 -->
+                        <TableRow
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content">
+
+                            <TextView
+                                android:layout_width="120dp"
+                                android:layout_height="wrap_content"
+                                android:padding="8dp"
+                                android:text="5" />
+
+                            <TextView
+                                android:layout_width="120dp"
+                                android:layout_height="wrap_content"
+                                android:padding="8dp"
+                                android:text="A5" />
+
+                            <TextView
+                                android:layout_width="120dp"
+                                android:layout_height="wrap_content"
+                                android:padding="8dp"
+                                android:text="B5" />
+
+                            <TextView
+                                android:layout_width="120dp"
+                                android:layout_height="wrap_content"
+                                android:padding="8dp"
+                                android:text="C5" />
+                        </TableRow>
+
+                    </LinearLayout>
+                </HorizontalScrollView>
+
+            </LinearLayout>
+        </ScrollView>
+
+    </androidx.constraintlayout.widget.ConstraintLayout>
+
+</LinearLayout>
