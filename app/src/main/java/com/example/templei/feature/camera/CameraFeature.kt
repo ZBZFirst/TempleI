@@ -55,6 +55,7 @@ object CameraFeature {
     }
 
     fun startPreview(
+        context: Context,
         lifecycleOwner: LifecycleOwner,
         previewView: PreviewView,
         onStarted: () -> Unit,

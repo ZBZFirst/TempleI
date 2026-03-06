@@ -141,6 +141,7 @@ class Screen1Activity : ComponentActivity() {
 
     private fun startCameraPreview() {
         CameraFeature.startPreview(
+            context = this,
             lifecycleOwner = this,
             previewView = previewView,
             onStarted = {
