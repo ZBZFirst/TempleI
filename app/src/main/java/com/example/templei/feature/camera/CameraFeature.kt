@@ -17,7 +17,9 @@ import androidx.camera.video.VideoCapture
 import androidx.camera.video.VideoRecordEvent
 import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
-import androidx.lifecycle.ProcessLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.LifecycleRegistry
 
 /**
  * Shared camera pipeline for preview, image capture, and video recording.
@@ -87,7 +89,7 @@ object CameraFeature {
 
         provider.unbindAll()
         provider.bindToLifecycle(
-            ProcessLifecycleOwner.get(),
+            CameraSessionLifecycleOwner,
             selectedLensOption.toSelector(),
             preview,
             imageCaptureUseCase,
@@ -220,6 +222,21 @@ object CameraFeature {
     fun isPreviewRunning(): Boolean = isBound
 
     fun isVideoRecording(): Boolean = isRecording
+
+
+    /**
+     * Lifecycle owner kept in RESUMED so camera can continue across Activity navigation.
+     *
+     * TODO: Move this to a foreground service session if capture must survive app backgrounding.
+     */
+    private object CameraSessionLifecycleOwner : LifecycleOwner {
+        private val lifecycleRegistry = LifecycleRegistry(this).apply {
+            currentState = Lifecycle.State.RESUMED
+        }
+
+        override val lifecycle: Lifecycle
+            get() = lifecycleRegistry
+    }
 
     private fun LensOption.toSelector(): CameraSelector {
         return when (this) {
