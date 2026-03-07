@@ -35,6 +35,7 @@ class SrtTransportNodeTest {
         val stats = SrtTransportNode.runtimeStats()
         assertTrue(stats.sending)
         assertEquals(1, stats.packetsSent)
+        assertEquals(1, stats.bytesSent)
         assertEquals(endpoint, stats.endpoint)
 
         SrtTransportNode.stopSending()
