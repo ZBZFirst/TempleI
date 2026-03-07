@@ -122,9 +122,11 @@ object SrtTransportNode {
             packetsSent += 1
             bytesSent += packet.size
             lastSendResult = "ok:${packet.size}"
+            StreamPipelineMetrics.recordSrtSendAttempt(success = true)
         } else {
             val reason = sendResult.exceptionOrNull()?.message ?: "send failed"
             lastSendResult = "failed:$reason"
+            StreamPipelineMetrics.recordSrtSendAttempt(success = false)
         }
         refreshNativeSnapshot()
         return sendResult
