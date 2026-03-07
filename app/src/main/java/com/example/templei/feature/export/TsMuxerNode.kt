@@ -19,6 +19,7 @@ object TsMuxerNode {
     private var audioAccessUnitsIngested: Long = 0
     private var packetsDrained: Long = 0
     private var bytesHandedToSrt: Long = 0
+    private var lastIngestError: String = ""
     private val pendingVideoAccessUnits = ArrayDeque<VideoEncoderNode.EncodedAccessUnit>()
     private val pendingAudioAccessUnits = ArrayDeque<AudioEncoderNode.EncodedAccessUnit>()
 
@@ -51,6 +52,7 @@ object TsMuxerNode {
             audioAccessUnitsIngested = 0
             packetsDrained = 0
             bytesHandedToSrt = 0
+            lastIngestError = ""
             // Preserve pending access units so capture bootstrap emitted before prepare/start still flushes.
         }
         return result
@@ -87,6 +89,8 @@ object TsMuxerNode {
             videoAccessUnitsIngested += 1
         }
         if (ingestResult.isFailure) {
+            lastIngestError = ingestResult.exceptionOrNull()?.message.orEmpty()
+            Log.e(TAG, "video ingest failed: $lastIngestError")
             return ingestResult
         }
 
@@ -111,6 +115,8 @@ object TsMuxerNode {
             audioAccessUnitsIngested += 1
         }
         if (ingestResult.isFailure) {
+            lastIngestError = ingestResult.exceptionOrNull()?.message.orEmpty()
+            Log.e(TAG, "audio ingest failed: $lastIngestError")
             return ingestResult
         }
 
@@ -135,6 +141,7 @@ object TsMuxerNode {
         audioAccessUnitsIngested = 0
         packetsDrained = 0
         bytesHandedToSrt = 0
+        lastIngestError = ""
         Log.i(TAG, "runtime reset")
     }
 
@@ -223,6 +230,8 @@ object TsMuxerNode {
         val packetsDrained: Long,
         val bytesHandedToSrt: Long,
     )
+
+    fun lastIngestError(): String = lastIngestError
 
     fun runtimeStats(): RuntimeStats {
         return RuntimeStats(

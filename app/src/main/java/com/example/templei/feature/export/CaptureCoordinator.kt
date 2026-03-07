@@ -1,5 +1,6 @@
 package com.example.templei.feature.export
 
+import android.util.Log
 import com.example.templei.feature.camera.CameraFeature
 
 /**
@@ -8,6 +9,7 @@ import com.example.templei.feature.camera.CameraFeature
  * TODO: Attach real camera/microphone outputs to encoder nodes once encode path is implemented.
  */
 object CaptureCoordinator {
+    private const val TAG = "TempleI-CaptureCoord"
     enum class StreamPathMode {
         FullAv,
         VideoOnly,
@@ -70,7 +72,10 @@ object CaptureCoordinator {
 
         if (streamMode != StreamPathMode.AudioOnly) {
             VideoEncoderNode.setOutputListener { accessUnit ->
-                TsMuxerNode.ingestVideo(accessUnit)
+                val ingest = TsMuxerNode.ingestVideo(accessUnit)
+                if (ingest.isFailure) {
+                    Log.e(TAG, "video->mux ingest failed: ${ingest.exceptionOrNull()?.message.orEmpty()}")
+                }
             }
             CameraFeature.setFrameOutputListener { frame ->
                 VideoEncoderNode.queueFrame(frame)
@@ -86,7 +91,10 @@ object CaptureCoordinator {
 
         if (streamMode != StreamPathMode.VideoOnly) {
             AudioEncoderNode.setOutputListener { accessUnit ->
-                TsMuxerNode.ingestAudio(accessUnit)
+                val ingest = TsMuxerNode.ingestAudio(accessUnit)
+                if (ingest.isFailure) {
+                    Log.e(TAG, "audio->mux ingest failed: ${ingest.exceptionOrNull()?.message.orEmpty()}")
+                }
             }
             val audioStarted = AudioEncoderNode.start()
             if (audioStarted.isFailure) {

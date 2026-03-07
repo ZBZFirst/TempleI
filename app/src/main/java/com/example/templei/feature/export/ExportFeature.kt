@@ -2,6 +2,7 @@ package com.example.templei.feature.export
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.util.Log
 
 /**
  * Screen 2 export/stream state holder for OBS-over-LAN ingest setup.
@@ -10,6 +11,7 @@ import android.content.SharedPreferences
  * TODO: Replace contract nodes with native MPEG-TS mux + SRT sender integration.
  */
 object ExportFeature {
+    private const val TAG = "TempleI-ExportFeature"
     enum class SessionState {
         Idle,
         Ready,
@@ -193,7 +195,7 @@ object ExportFeature {
             else -> {
                 "streaming health: mode=${config.streamMode.name} video(frames=${videoStats.framesEncoded}) " +
                     "audio(frames=${audioStats.framesEncoded}) mux(v=${muxStats.videoAccessUnitsIngested},a=${muxStats.audioAccessUnitsIngested}," +
-                    "ts=${muxStats.packetsDrained},handed=${muxStats.bytesHandedToSrt}) " +
+                    "ts=${muxStats.packetsDrained},handed=${muxStats.bytesHandedToSrt},lastErr=${TsMuxerNode.lastIngestError()}) " +
                     "srt(sent=${srtStats.packetsSent},bytes=${srtStats.bytesSent},handed=${srtStats.bytesHandedToSrt},state=${srtStats.socketState}," +
                     "last=${srtStats.lastSendResult},retries=${srtStats.reconnectAttempts},native=${srtStats.nativeStatsSnapshot})"
             }
@@ -274,7 +276,10 @@ object ExportFeature {
             }
 
             TsMuxerNode.setPacketOutputListener { packet ->
-                SrtTransportNode.sendPacket(packet)
+                val send = SrtTransportNode.sendPacket(packet)
+                if (send.isFailure) {
+                    Log.e(TAG, "mux->srt send failed: ${send.exceptionOrNull()?.message.orEmpty()}")
+                }
             }
 
             val muxStarted = TsMuxerNode.start()
