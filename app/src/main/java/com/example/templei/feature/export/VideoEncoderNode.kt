@@ -104,9 +104,11 @@ object VideoEncoderNode {
         val configuredWidth = activeConfig.width
         val configuredHeight = activeConfig.height
         if (frame.width != configuredWidth || frame.height != configuredHeight) {
-            // Ignore frames with unexpected dimensions while camera + encoder profile alignment is in progress.
-            Log.w(TAG, "drop frame due to dimension mismatch frame=${frame.width}x${frame.height} encoder=${configuredWidth}x${configuredHeight}")
-            return
+            val reconfigure = restartForResolution(frame.width, frame.height)
+            if (reconfigure.isFailure) {
+                Log.w(TAG, "drop frame due to dimension mismatch frame=${frame.width}x${frame.height} encoder=${configuredWidth}x${configuredHeight}")
+                return
+            }
         }
 
         val activeCodec = codec ?: return
@@ -144,6 +146,25 @@ object VideoEncoderNode {
     fun state(): NodeState = nodeState
 
     fun error(): String = lastError
+
+    private fun restartForResolution(frameWidth: Int, frameHeight: Int): Result<Unit> {
+        if (frameWidth <= 0 || frameHeight <= 0) {
+            return Result.failure(IllegalArgumentException("invalid frame resolution"))
+        }
+
+        if (frameWidth == activeConfig.width && frameHeight == activeConfig.height) {
+            return Result.success(Unit)
+        }
+
+        Log.i(TAG, "encoder-reconfigure old=${activeConfig.width}x${activeConfig.height} new=${frameWidth}x${frameHeight}")
+        stop()
+        val updatedConfig = activeConfig.copy(width = frameWidth, height = frameHeight)
+        val configured = configure(updatedConfig)
+        if (configured.isFailure) {
+            return configured
+        }
+        return start()
+    }
 
     private fun drainOutput() {
         val activeCodec = codec ?: return

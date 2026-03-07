@@ -65,6 +65,8 @@ object CameraFeature {
 
     private val analysisExecutor = Executors.newSingleThreadExecutor()
     private var unexpectedAnalysisFrameCount = 0L
+    private var analysisFrameWidth = 0
+    private var analysisFrameHeight = 0
 
     fun selectedLens(): LensOption = selectedLensOption
 
@@ -96,6 +98,8 @@ object CameraFeature {
         if (!provider.hasCamera(selectedLensOption.toSelector())) {
             isBound = false
             unexpectedAnalysisFrameCount = 0
+            analysisFrameWidth = 0
+            analysisFrameHeight = 0
             onUnavailable()
             return
         }
@@ -127,6 +131,8 @@ object CameraFeature {
 
         provider.unbindAll()
         unexpectedAnalysisFrameCount = 0
+        analysisFrameWidth = 0
+        analysisFrameHeight = 0
         provider.bindToLifecycle(
             CameraSessionLifecycleOwner,
             selectedLensOption.toSelector(),
@@ -176,6 +182,8 @@ object CameraFeature {
 
         provider.unbindAll()
         unexpectedAnalysisFrameCount = 0
+        analysisFrameWidth = 0
+        analysisFrameHeight = 0
         provider.bindToLifecycle(
             CameraSessionLifecycleOwner,
             selectedLensOption.toSelector(),
@@ -201,6 +209,8 @@ object CameraFeature {
         imageAnalysis = null
         isBound = false
         unexpectedAnalysisFrameCount = 0
+        analysisFrameWidth = 0
+        analysisFrameHeight = 0
     }
 
     fun takePicture(
@@ -323,16 +333,14 @@ object CameraFeature {
                 return
             }
 
-            if (imageProxy.width != STREAM_ANALYSIS_EXPECTED_WIDTH || imageProxy.height != STREAM_ANALYSIS_EXPECTED_HEIGHT) {
+            if (analysisFrameWidth != imageProxy.width || analysisFrameHeight != imageProxy.height) {
+                analysisFrameWidth = imageProxy.width
+                analysisFrameHeight = imageProxy.height
                 unexpectedAnalysisFrameCount += 1
-                if (unexpectedAnalysisFrameCount <= 5 || (unexpectedAnalysisFrameCount % 120L) == 0L) {
-                    Log.w(
-                        TAG,
-                        "drop analysis frame due to size mismatch frame=${imageProxy.width}x${imageProxy.height} " +
-                            "expected=${STREAM_ANALYSIS_EXPECTED_WIDTH}x${STREAM_ANALYSIS_EXPECTED_HEIGHT} count=$unexpectedAnalysisFrameCount",
-                    )
-                }
-                return
+                Log.w(
+                    TAG,
+                    "analysis frame size observed=${imageProxy.width}x${imageProxy.height} changeCount=$unexpectedAnalysisFrameCount",
+                )
             }
 
             val listener = frameOutputListener ?: return
