@@ -91,11 +91,10 @@ object ExportFeature {
         val result = when {
             hostMissing -> ValidationResult(false, "host missing")
             invalidPort -> ValidationResult(false, "port invalid")
-            !transportGateway.isAvailable() -> ValidationResult(false, "native mux path unavailable; sender unavailable")
             else -> ValidationResult(true, "ready")
         }
 
-        sessionState = if (result.isValid) SessionState.Ready else SessionState.Faulted
+        sessionState = if (result.isValid) SessionState.Ready else SessionState.Idle
         lastValidation = result.message
         if (!result.isValid) {
             lastError = result.message
@@ -105,10 +104,10 @@ object ExportFeature {
 
     fun testEndpoint(config: ObsStreamConfig): String {
         val validation = validateConfig(config)
-        lastConnectionTest = if (validation.isValid) {
-            "endpoint configuration valid"
-        } else {
-            "transport not ready: ${validation.message}"
+        lastConnectionTest = when {
+            !validation.isValid -> "transport not ready: ${validation.message}"
+            !transportGateway.isAvailable() -> "native mux path unavailable; sender unavailable"
+            else -> "endpoint configuration valid"
         }
         return lastConnectionTest
     }
@@ -117,6 +116,12 @@ object ExportFeature {
         val validation = validateConfig(config)
         if (!validation.isValid) {
             return StreamResult(state = SessionState.Faulted, error = validation.message)
+        }
+
+        if (!transportGateway.isAvailable()) {
+            sessionState = SessionState.Faulted
+            lastError = "native mux path unavailable; sender unavailable"
+            return StreamResult(state = sessionState, error = lastError)
         }
 
         sessionState = SessionState.Starting

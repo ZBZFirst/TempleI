@@ -92,3 +92,9 @@ This plan keeps **Screen 1 camera behavior unchanged** and uses **Screen 2** as 
   2. Start stream.
   3. Navigate across screens and verify stream continuity.
   4. Verify OBS receives A/V and reconnect behavior.
+
+
+## Latest completion notes
+- Validation no longer immediately faults Screen 2 for missing host/port; invalid endpoint input now keeps session state in `Idle` with explicit validation messages.
+- Validate and Start now prompt for host input when empty to reduce dead-end `host missing` flows.
+- Transport availability is now reported in endpoint test and Start path separately; Start transitions to `Faulted` only when native MPEG-TS + SRT transport is unavailable.

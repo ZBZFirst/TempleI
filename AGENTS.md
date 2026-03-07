@@ -86,8 +86,8 @@ Use the entries below for Obsidian graph/linking. Paths are repo-relative and in
 
 ## Current implementation snapshot (as of latest reviewed commit)
 - `Screen1Activity` + `CameraFeature` currently provide camera preview, picture capture, and video recording (with microphone) and persist media into `Pictures/TempleI` and `Movies/TempleI`.
-- `Screen2Activity` and `activity_screen2.xml` are currently planning-oriented shells for the OBS-over-LAN effort, with placeholder controls and OBS/SRT terminology.
-- `feature/export/ExportFeature.kt` is still a placeholder and should be treated as the primary landing area for streaming implementation classes.
+- `Screen2Activity` and `activity_screen2.xml` now implement OBS SRT ingest configuration and control wiring (host/port edit, validate/test, preset reset, URL display, profile toggle, start/stop).
+- `feature/export/ExportFeature.kt` now holds Screen 2 config persistence, validation, session state, OBS URL generation, and a transport boundary stub for pending native MPEG-TS + SRT integration.
 
 ## File structure snapshot and update targets
 Use this as the practical "what exists now" map before editing:
@@ -96,7 +96,7 @@ Use this as the practical "what exists now" map before editing:
   - `Screen1Activity.kt` (working camera UI; avoid regressions)
   - `Screen2Activity.kt` (streaming setup/orchestration UI host)
   - `feature/camera/CameraFeature.kt` (existing capture pipeline)
-  - `feature/export/ExportFeature.kt` (placeholder for streaming pipeline)
+  - `feature/export/ExportFeature.kt` (Screen 2 workflow state + transport boundary stub)
 - `app/src/main/res/layout/`
   - `activity_screen1.xml` (active camera controls + preview)
   - `activity_screen2.xml` (OBS/SRT planning controls)
@@ -137,3 +137,20 @@ Risks that usually force extra back-and-forth:
 - SRT library/platform integration details and reconnect edge cases.
 - Foreground service and permission behavior differences across Android versions.
 
+## Completed work log (most recent first)
+- Screen 2 OBS workflow now wires all eight existing buttons to host/port edit, validate/test, preset reset, input-string display, profile toggle, start, and stop actions.
+- Screen 2 now renders required OBS outputs: setup summary, session state, validation message, last connection test, and last error.
+- `ExportFeature` now persists OBS config, generates `srt://<host>:<port>?mode=listener`, and exposes a transport boundary with explicit native MPEG-TS + SRT unavailability messaging.
+- Follow-up UX hardening completed:
+  - Validate/Start now prompt for host when empty.
+  - Host/port validation keeps session in `Idle` instead of forcing immediate `Faulted`.
+  - `Faulted` is now reserved for attempted Start when native transport is unavailable.
+
+
+## Round-by-round implementation checklist
+- [COMPLETED] Round 1: Contract + config pass (endpoint model, Screen 2 validation/persistence, OBS URL generation).
+- [ ] Round 2: Service/session pass (foreground stream service boundary and lifecycle-safe command channel).
+- [ ] Round 3: Video path pass (camera encoded output routing into streaming pipeline).
+- [ ] Round 4: Audio path pass (mic ingest + A/V clock alignment for stream path).
+- [ ] Round 5: MPEG-TS mux + SRT transport pass (native mux/sender integration behind transport boundary).
+- [ ] Round 6: OBS interoperability/tuning pass (latency, reconnect behavior, user-facing diagnostics).

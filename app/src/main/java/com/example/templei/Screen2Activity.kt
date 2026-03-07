@@ -53,6 +53,11 @@ class Screen2Activity : ComponentActivity() {
             promptForPort()
         }
         findViewById<Button>(R.id.defineMuxingButton).setOnClickListener {
+            if (currentConfig.host.isBlank()) {
+                promptForHost()
+                return@setOnClickListener
+            }
+
             val result = ExportFeature.validateConfig(currentConfig)
             ExportFeature.testEndpoint(currentConfig)
             if (result.isValid) {
@@ -76,6 +81,11 @@ class Screen2Activity : ComponentActivity() {
             renderStatus()
         }
         findViewById<Button>(R.id.setupContractsButton).setOnClickListener {
+            if (currentConfig.host.isBlank()) {
+                promptForHost()
+                return@setOnClickListener
+            }
+
             val result = ExportFeature.startStream(currentConfig)
             if (result.state == ExportFeature.SessionState.Streaming) {
                 ExportFeature.saveConfig(this, currentConfig)
