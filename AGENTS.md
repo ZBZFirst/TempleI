@@ -194,3 +194,65 @@ Risks that usually force extra back-and-forth:
 - [COMPLETED] Updated docs (`app/src/main/jniLibs/README.md`, `docs/screen2-obs-streaming-plan.md`) to clarify sender obligations and build prerequisites.
 - [NEXT] Provide stable CI-hosted/prebuilt `libsrt.so` artifacts for all required ABIs to remove network dependency during local/CI builds.
 
+
+## Streaming bottleneck isolation progress log (new)
+Use this section as the current source of truth for the camera -> encoder -> mux -> SRT diagnostic effort.
+
+### Recently completed diagnostics and findings
+- [COMPLETED] Mapped all currently configured camera outputs in the active pipeline:
+  - `Preview` (`PreviewView.surfaceProvider`)
+  - `ImageCapture`
+  - `VideoCapture<Recorder>`
+  - `ImageAnalysis` (`YUV_420_888`, keep-latest backpressure)
+- [COMPLETED] Verified `ImageProxy` lifecycle handling:
+  - Current `ImageAnalysis` callback closes `ImageProxy` in `finally`, covering early-return paths.
+- [COMPLETED] Confirmed synchronous callback chain currently couples critical stages:
+  - Camera analyzer callback -> `VideoEncoderNode.queueFrame`
+  - `VideoEncoderNode.drainOutput` -> mux ingest
+  - mux packet drain callback -> `SrtTransportNode.sendPacket`
+- [COMPLETED] Identified likely first backpressure point under load:
+  - Network send path (`nativeSendPacket` / `srt_send`) can stall and currently runs inline with upstream stage callbacks.
+- [COMPLETED] Confirmed queue policy gaps contributing to stall amplification:
+  - Mux pending AU queues are unbounded pre-start.
+  - Native mux packet queue uses unbounded `std::deque`.
+  - No explicit drop-on-overflow policy is currently enforced end-to-end.
+
+### Targeted completion items (Option B execution plan)
+Implement the following in small PR increments; keep variable declarations explicit up front per approval workflow.
+
+1. **Metrics model extraction (Option B foundation)**
+   - Add a dedicated metrics holder for stage timings/counters (new file allowed in Option B).
+   - Track camera-arrival, encoder-in/out, mux-drain, and SRT-send timings with monotonic clocks.
+   - Include rolling aggregates needed to report where backpressure first appears.
+
+2. **Bounded queue boundaries between stages**
+   - Introduce explicit bounded queue between camera and encoder input path.
+   - Introduce explicit bounded queue between encoder output and mux ingest path.
+   - Introduce explicit bounded queue between mux packet output and SRT send path.
+   - Enforce non-blocking producer semantics on camera/encoder critical threads.
+
+3. **Overflow behavior hardening**
+   - On queue-full events, drop frames/packets instead of blocking critical callbacks.
+   - Record per-stage drop counters and expose in diagnostics.
+   - Document drop policy priority (freshness-first for real-time path).
+
+4. **Mode matrix for bottleneck isolation**
+   - Add selectable execution modes:
+     - preview only
+     - preview + encoder only
+     - preview + encoder + local sink
+     - preview + encoder + SRT send
+     - reduced profile (720p / 30fps / lower bitrate)
+   - Persist chosen mode with existing Screen 2 configuration storage.
+
+5. **Stage-origin backpressure reporting**
+   - Add periodic structured diagnostic snapshots for:
+     - stage latency
+     - queue depth
+     - drop counts
+   - Emit explicit origin field indicating first stage crossing frame-budget threshold.
+   - Surface latest origin/result in Screen 2 status text for operator debugging.
+
+6. **Validation and closeout**
+   - Run static/unit validation where environment allows.
+   - If Android SDK is unavailable, record environment limitation and include static verification summary.
