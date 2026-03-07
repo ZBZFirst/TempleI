@@ -24,6 +24,7 @@ struct MuxRuntimeState {
     bool audioSeen = false;
     uint8_t pmtVersion = 0;
     uint64_t pesPacketsSinceLastPatPmt = 0;
+    uint64_t videoPacketsSinceLastPcr = 0;
 };
 
 std::mutex gMutex;
@@ -37,11 +38,24 @@ constexpr uint16_t kPidAudio = 0x0102;
 constexpr uint8_t kStreamTypeH264 = 0x1B;
 constexpr uint8_t kStreamTypeAac = 0x0F;
 constexpr const char* kLogTag = "TempleI-MuxStub";
-constexpr uint64_t kPatPmtRepeatIntervalPesPackets = 32;
+constexpr uint64_t kPatPmtRepeatIntervalPesPackets = 8;
+constexpr uint64_t kPcrEmitIntervalVideoPackets = 3;
+constexpr int kStartupPatPmtBurstRepeats = 4;
+
+void writePcr(uint8_t* destination, uint64_t pcr90k) {
+    const uint64_t base = pcr90k & ((1ULL << 33) - 1);
+    destination[0] = static_cast<uint8_t>((base >> 25) & 0xFF);
+    destination[1] = static_cast<uint8_t>((base >> 17) & 0xFF);
+    destination[2] = static_cast<uint8_t>((base >> 9) & 0xFF);
+    destination[3] = static_cast<uint8_t>((base >> 1) & 0xFF);
+    destination[4] = static_cast<uint8_t>(((base & 0x01) << 7) | 0x7E);
+    destination[5] = 0x00;
+}
 
 int gPatPmtLogCount = 0;
 bool gFirstVideoPesLogged = false;
 bool gFirstAudioPesLogged = false;
+bool gAudioSuppressedLogged = false;
 std::map<uint16_t, uint64_t> gPidPacketCount;
 
 void logPidPacket(uint16_t pid) {
@@ -56,13 +70,31 @@ std::vector<uint8_t> buildTsPacket(
         bool payloadUnitStart,
         const uint8_t* payload,
         size_t payloadLen,
-        uint8_t continuityCounter) {
+        uint8_t continuityCounter,
+        bool includePcr,
+        uint64_t pcr90k) {
     std::vector<uint8_t> packet(188, 0xFF);
     packet[0] = 0x47;
     packet[1] = static_cast<uint8_t>(((payloadUnitStart ? 0x40 : 0x00) | ((pid >> 8) & 0x1F)));
     packet[2] = static_cast<uint8_t>(pid & 0xFF);
-    const size_t copyLen = std::min(payloadLen, static_cast<size_t>(184));
-    const size_t stuffingLen = 184 - copyLen;
+    const size_t payloadCapacity = includePcr ? static_cast<size_t>(176) : static_cast<size_t>(184);
+    const size_t copyLen = std::min(payloadLen, payloadCapacity);
+    const size_t stuffingLen = payloadCapacity - copyLen;
+
+    if (includePcr) {
+        packet[3] = static_cast<uint8_t>(0x30 | (continuityCounter & 0x0F));
+        packet[4] = static_cast<uint8_t>(7 + stuffingLen);
+        packet[5] = 0x10;
+        writePcr(packet.data() + 6, pcr90k);
+        if (stuffingLen > 0) {
+            std::memset(packet.data() + 12, 0xFF, stuffingLen);
+        }
+        if (copyLen > 0) {
+            const size_t payloadOffset = 4 + 1 + packet[4];
+            std::memcpy(packet.data() + payloadOffset, payload, copyLen);
+        }
+        return packet;
+    }
 
     if (stuffingLen == 0) {
         packet[3] = static_cast<uint8_t>(0x10 | (continuityCounter & 0x0F));
@@ -114,7 +146,7 @@ void pushSectionAsTsPackets(uint16_t pid, const std::vector<uint8_t>& sectionByt
     while (offset < payload.size()) {
         auto& cc = gState.continuityCounter[pid];
         const size_t chunkLen = std::min(static_cast<size_t>(184), payload.size() - offset);
-        auto packet = buildTsPacket(pid, first, payload.data() + offset, chunkLen, cc++);
+        auto packet = buildTsPacket(pid, first, payload.data() + offset, chunkLen, cc++, false, 0);
         gState.packetQueue.push_back(std::move(packet));
         logPidPacket(pid);
         offset += chunkLen;
@@ -122,8 +154,9 @@ void pushSectionAsTsPackets(uint16_t pid, const std::vector<uint8_t>& sectionByt
     }
 }
 
-void emitPatAndPmt() {
-    const bool includeAudio = gState.audioSeen;
+void emitPatAndPmt(bool startupBurst = false) {
+    // PR3 bring-up policy: keep PMT stable as video-only until OBS ingest is proven stable.
+    const bool includeAudio = false;
     const uint8_t version = static_cast<uint8_t>(gState.pmtVersion & 0x1F);
 
     // PAT section.
@@ -143,7 +176,10 @@ void emitPatAndPmt() {
     pat.push_back(static_cast<uint8_t>((patCrc >> 16) & 0xFF));
     pat.push_back(static_cast<uint8_t>((patCrc >> 8) & 0xFF));
     pat.push_back(static_cast<uint8_t>(patCrc & 0xFF));
-    pushSectionAsTsPackets(kPidPat, pat);
+    const int repeats = startupBurst ? kStartupPatPmtBurstRepeats : 1;
+    for (int index = 0; index < repeats; ++index) {
+        pushSectionAsTsPackets(kPidPat, pat);
+    }
 
     // PMT section.
     std::vector<uint8_t> pmt;
@@ -178,7 +214,9 @@ void emitPatAndPmt() {
     pmt.push_back(static_cast<uint8_t>((pmtCrc >> 16) & 0xFF));
     pmt.push_back(static_cast<uint8_t>((pmtCrc >> 8) & 0xFF));
     pmt.push_back(static_cast<uint8_t>(pmtCrc & 0xFF));
-    pushSectionAsTsPackets(kPidPmt, pmt);
+    for (int index = 0; index < repeats; ++index) {
+        pushSectionAsTsPackets(kPidPmt, pmt);
+    }
     gState.pesPacketsSinceLastPatPmt = 0;
     gState.pmtVersion = static_cast<uint8_t>((gState.pmtVersion + 1) & 0x1F);
     if (gPatPmtLogCount == 0) {
@@ -230,30 +268,41 @@ void pushPesAsTsPackets(
     if (pid == kPidVideo && !gFirstVideoPesLogged) {
         gFirstVideoPesLogged = true;
         gState.videoSeen = true;
-        emitPatAndPmt();
+        emitPatAndPmt(false);
         __android_log_print(ANDROID_LOG_INFO, kLogTag, "first video PES streamId=0x%02X payload=%zu ptsUs=%lld", streamId, payloadLen, static_cast<long long>(ptsUs));
     }
     if (pid == kPidAudio && !gFirstAudioPesLogged) {
         gFirstAudioPesLogged = true;
         gState.audioSeen = true;
-        emitPatAndPmt();
-        __android_log_print(ANDROID_LOG_INFO, kLogTag, "first audio PES streamId=0x%02X payload=%zu ptsUs=%lld", streamId, payloadLen, static_cast<long long>(ptsUs));
+        __android_log_print(ANDROID_LOG_INFO, kLogTag, "audio PES observed but suppressed for video-only bring-up");
     }
 
     size_t offset = 0;
     bool first = true;
     while (offset < pes.size()) {
         auto& cc = gState.continuityCounter[pid];
-        const size_t chunkLen = std::min(static_cast<size_t>(184), pes.size() - offset);
-        auto packet = buildTsPacket(pid, first, pes.data() + offset, chunkLen, cc++);
+        const bool includePcr = (pid == kPidVideo) && (gState.videoPacketsSinceLastPcr == 0);
+        const size_t payloadCapacity = includePcr ? static_cast<size_t>(176) : static_cast<size_t>(184);
+        const size_t chunkLen = std::min(payloadCapacity, pes.size() - offset);
+        auto packet = buildTsPacket(
+                pid,
+                first,
+                pes.data() + offset,
+                chunkLen,
+                cc++,
+                includePcr,
+                pts90k);
         gState.packetQueue.push_back(std::move(packet));
         logPidPacket(pid);
+        if (pid == kPidVideo) {
+            gState.videoPacketsSinceLastPcr = (gState.videoPacketsSinceLastPcr + 1) % kPcrEmitIntervalVideoPackets;
+        }
         gState.pesPacketsSinceLastPatPmt += 1;
         offset += chunkLen;
         first = false;
 
         if (gState.pesPacketsSinceLastPatPmt >= kPatPmtRepeatIntervalPesPackets) {
-            emitPatAndPmt();
+            emitPatAndPmt(false);
         }
     }
 }
@@ -269,6 +318,14 @@ jboolean ingestCommon(JNIEnv* env, jbyteArray payloadArray, jlong ptsUs, jint tr
         return JNI_FALSE;
     }
 
+    if (trackIndex == 1) {
+        if (!gAudioSuppressedLogged) {
+            gAudioSuppressedLogged = true;
+            __android_log_print(ANDROID_LOG_INFO, kLogTag, "audio ingest suppressed in native mux for video-only bring-up");
+        }
+        return JNI_TRUE;
+    }
+
     const auto payloadLen = static_cast<size_t>(env->GetArrayLength(payloadArray));
     if (payloadLen == 0) {
         return JNI_TRUE;
@@ -278,11 +335,7 @@ jboolean ingestCommon(JNIEnv* env, jbyteArray payloadArray, jlong ptsUs, jint tr
     env->GetByteArrayRegion(payloadArray, 0, static_cast<jsize>(payloadLen),
                             reinterpret_cast<jbyte*>(payload.data()));
 
-    if (trackIndex == 1) {
-        pushPesAsTsPackets(kPidAudio, 0xC0, payload.data(), payload.size(), ptsUs);
-    } else {
-        pushPesAsTsPackets(kPidVideo, 0xE0, payload.data(), payload.size(), ptsUs);
-    }
+    pushPesAsTsPackets(kPidVideo, 0xE0, payload.data(), payload.size(), ptsUs);
 
     return JNI_TRUE;
 }
@@ -300,6 +353,7 @@ Java_com_example_templei_feature_export_TsMuxNativeBridge_nativePrepare(
     gPatPmtLogCount = 0;
     gFirstVideoPesLogged = false;
     gFirstAudioPesLogged = false;
+    gAudioSuppressedLogged = false;
     gPidPacketCount.clear();
     return JNI_TRUE;
 }
@@ -314,7 +368,7 @@ Java_com_example_templei_feature_export_TsMuxNativeBridge_nativeStart(
         return JNI_FALSE;
     }
     gState.started = true;
-    emitPatAndPmt();
+    emitPatAndPmt(true);
     return JNI_TRUE;
 }
 

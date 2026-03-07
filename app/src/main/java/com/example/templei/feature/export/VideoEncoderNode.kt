@@ -36,7 +36,7 @@ object VideoEncoderNode {
     )
 
     private const val MIME_TYPE = MediaFormat.MIMETYPE_VIDEO_AVC
-    private const val I_FRAME_INTERVAL_SECONDS = 2
+    private const val I_FRAME_INTERVAL_SECONDS = 1
 
     private var nodeState: NodeState = NodeState.Idle
     private var lastError: String = ""
@@ -157,6 +157,7 @@ object VideoEncoderNode {
         }
 
         Log.i(TAG, "encoder-reconfigure old=${activeConfig.width}x${activeConfig.height} new=${frameWidth}x${frameHeight}")
+        TsMuxerNode.markReconfigurePending()
         stop()
         val updatedConfig = activeConfig.copy(width = frameWidth, height = frameHeight)
         val configured = configure(updatedConfig)

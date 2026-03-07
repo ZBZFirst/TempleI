@@ -1,5 +1,6 @@
 package com.example.templei.feature.export
 
+import android.media.MediaCodec
 import android.util.Log
 
 /**
@@ -13,6 +14,11 @@ object TsMuxerNode {
     private const val MUX_NATIVE_LIBRARY = "templei_mux"
 
     private var started = false
+    private var startupState: StartupState = StartupState.Idle
+    private var outputFormatKnown = false
+    private var firstKeyframeLatched = false
+    private var startupSendGateOpen = false
+    private var startupBurstPacketsRemaining = 0
     private var runtime: RuntimeBinding = RuntimeBinding.Uninitialized
     private var packetOutputListener: ((ByteArray) -> Unit)? = null
     private var videoAccessUnitsIngested: Long = 0
@@ -20,8 +26,23 @@ object TsMuxerNode {
     private var packetsDrained: Long = 0
     private var bytesHandedToSrt: Long = 0
     private var lastIngestError: String = ""
+    private var audioAccessUnitsSuppressed: Long = 0
     private val pendingVideoAccessUnits = ArrayDeque<VideoEncoderNode.EncodedAccessUnit>()
     private val pendingAudioAccessUnits = ArrayDeque<AudioEncoderNode.EncodedAccessUnit>()
+    private const val STARTUP_BURST_PACKET_COUNT = 256
+
+    enum class StartupState {
+        Idle,
+        CaptureWarmup,
+        EncoderConfigured,
+        OutputFormatKnown,
+        FirstKeyframeLatched,
+        PsiPrimed,
+        StartupBurstSent,
+        Streaming,
+        ReconfigurePending,
+        Fault,
+    }
 
     /**
      * Probe for runtime availability once and cache the result.
@@ -48,11 +69,17 @@ object TsMuxerNode {
         }
         val result = resolved.getOrThrow().prepare()
         if (result.isSuccess) {
+            setStartupState(StartupState.CaptureWarmup)
+            outputFormatKnown = false
+            firstKeyframeLatched = false
+            startupSendGateOpen = false
+            startupBurstPacketsRemaining = 0
             videoAccessUnitsIngested = 0
             audioAccessUnitsIngested = 0
             packetsDrained = 0
             bytesHandedToSrt = 0
             lastIngestError = ""
+            audioAccessUnitsSuppressed = 0
             // Preserve pending access units so capture bootstrap emitted before prepare/start still flushes.
         }
         return result
@@ -67,6 +94,7 @@ object TsMuxerNode {
         val startResult = resolved.getOrThrow().start()
         if (startResult.isSuccess) {
             started = true
+            setStartupState(StartupState.EncoderConfigured)
             Log.i(TAG, "muxer-start container=MPEG-TS packetSize=188")
             flushPendingAccessUnits()
         }
@@ -97,45 +125,23 @@ object TsMuxerNode {
             StreamPipelineMetrics.recordMuxVideoIngest()
         }
         if (ingestResult.isFailure) {
+            setStartupState(StartupState.Fault)
             lastIngestError = ingestResult.exceptionOrNull()?.message.orEmpty()
             Log.e(TAG, "video ingest failed: $lastIngestError")
             return ingestResult
         }
 
+        updateStartupGateFromVideo(accessUnit)
         drainPacketToOutput()
         return Result.success(Unit)
     }
 
     fun ingestAudio(accessUnit: AudioEncoderNode.EncodedAccessUnit): Result<Unit> {
-        if (!started) {
-            // Capture path currently boots before transport start; queue until mux starts.
-            pendingAudioAccessUnits += accessUnit
-            val snapshot = StreamPipelineMetrics.snapshot()
-            StreamPipelineMetrics.updateQueueDepths(
-                cameraToEncoder = snapshot.cameraToEncoderQueueDepth,
-                encoderToMux = pendingVideoAccessUnits.size + pendingAudioAccessUnits.size,
-                muxToSrt = snapshot.muxToSrtQueueDepth,
-            )
-            return Result.success(Unit)
+        // PR3 bring-up policy: keep transport video-only until OBS ingest is stable.
+        audioAccessUnitsSuppressed += 1
+        if (audioAccessUnitsSuppressed <= 5 || (audioAccessUnitsSuppressed % 300L) == 0L) {
+            Log.i(TAG, "audio ingest suppressed for video-only bring-up count=$audioAccessUnitsSuppressed")
         }
-
-        val resolved = resolveRuntime()
-        if (resolved.isFailure) {
-            return Result.failure(resolved.exceptionOrNull() ?: IllegalStateException("native mux path unavailable"))
-        }
-
-        val ingestResult = resolved.getOrThrow().ingestAudio(accessUnit)
-        if (ingestResult.isSuccess) {
-            audioAccessUnitsIngested += 1
-            StreamPipelineMetrics.recordMuxAudioIngest()
-        }
-        if (ingestResult.isFailure) {
-            lastIngestError = ingestResult.exceptionOrNull()?.message.orEmpty()
-            Log.e(TAG, "audio ingest failed: $lastIngestError")
-            return ingestResult
-        }
-
-        drainPacketToOutput()
         return Result.success(Unit)
     }
 
@@ -160,10 +166,24 @@ object TsMuxerNode {
         runtime = RuntimeBinding.Uninitialized
         videoAccessUnitsIngested = 0
         audioAccessUnitsIngested = 0
+        audioAccessUnitsSuppressed = 0
         packetsDrained = 0
         bytesHandedToSrt = 0
         lastIngestError = ""
+        setStartupState(StartupState.Idle)
+        outputFormatKnown = false
+        firstKeyframeLatched = false
+        startupSendGateOpen = false
+        startupBurstPacketsRemaining = 0
         Log.i(TAG, "runtime reset")
+    }
+
+    fun markReconfigurePending() {
+        setStartupState(StartupState.ReconfigurePending)
+        outputFormatKnown = false
+        firstKeyframeLatched = false
+        startupSendGateOpen = false
+        startupBurstPacketsRemaining = 0
     }
 
     fun isStarted(): Boolean = started
@@ -205,6 +225,10 @@ object TsMuxerNode {
     }
 
     private fun drainPacketToOutput() {
+        if (!startupSendGateOpen) {
+            return
+        }
+
         val runtimeInstance = resolveRuntime().getOrNull() ?: return
         while (true) {
             val packet = runtimeInstance.drainPacket()
@@ -219,6 +243,43 @@ object TsMuxerNode {
                 Log.i(TAG, "mux-packet index=$packetsDrained bytes=${packet.size} sync47=$syncByteOk")
             }
             packetOutputListener?.invoke(packet)
+
+            if (startupBurstPacketsRemaining > 0) {
+                startupBurstPacketsRemaining -= 1
+                if (startupBurstPacketsRemaining == 0) {
+                    setStartupState(StartupState.StartupBurstSent)
+                    setStartupState(StartupState.Streaming)
+                }
+            }
+        }
+    }
+
+    private fun updateStartupGateFromVideo(accessUnit: VideoEncoderNode.EncodedAccessUnit) {
+        val hasCodecConfig = (accessUnit.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG) != 0
+        val hasKeyframe = (accessUnit.flags and MediaCodec.BUFFER_FLAG_KEY_FRAME) != 0
+
+        if (hasCodecConfig && !outputFormatKnown) {
+            outputFormatKnown = true
+            setStartupState(StartupState.OutputFormatKnown)
+        }
+
+        if (hasKeyframe && !firstKeyframeLatched) {
+            firstKeyframeLatched = true
+            setStartupState(StartupState.FirstKeyframeLatched)
+        }
+
+        if (!startupSendGateOpen && outputFormatKnown && firstKeyframeLatched) {
+            setStartupState(StartupState.PsiPrimed)
+            startupSendGateOpen = true
+            startupBurstPacketsRemaining = STARTUP_BURST_PACKET_COUNT
+            Log.i(TAG, "startup-send-gate opened burstPackets=$STARTUP_BURST_PACKET_COUNT")
+        }
+    }
+
+    private fun setStartupState(state: StartupState) {
+        if (startupState != state) {
+            startupState = state
+            Log.i(TAG, "startup-state=$startupState")
         }
     }
 
@@ -255,6 +316,8 @@ object TsMuxerNode {
         val audioAccessUnitsIngested: Long,
         val packetsDrained: Long,
         val bytesHandedToSrt: Long,
+        val startupState: StartupState,
+        val audioAccessUnitsSuppressed: Long,
     )
 
     fun lastIngestError(): String = lastIngestError
@@ -266,6 +329,8 @@ object TsMuxerNode {
             audioAccessUnitsIngested = audioAccessUnitsIngested,
             packetsDrained = packetsDrained,
             bytesHandedToSrt = bytesHandedToSrt,
+            startupState = startupState,
+            audioAccessUnitsSuppressed = audioAccessUnitsSuppressed,
         )
     }
 

@@ -6,6 +6,11 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class TsMuxerNodeTest {
+    private companion object {
+        const val FLAG_KEY_FRAME = 1
+        const val FLAG_CODEC_CONFIG = 2
+    }
+
     @Test
     fun `isAvailable false when native runtime is missing`() {
         TsMuxerNode.installRuntimeForTesting(null)
@@ -42,9 +47,16 @@ class TsMuxerNodeTest {
 
         TsMuxerNode.ingestVideo(
             VideoEncoderNode.EncodedAccessUnit(
+                data = byteArrayOf(0x00, 0x00, 0x00, 0x01, 0x67),
+                presentationTimeUs = 0,
+                flags = FLAG_CODEC_CONFIG,
+            ),
+        )
+        TsMuxerNode.ingestVideo(
+            VideoEncoderNode.EncodedAccessUnit(
                 data = byteArrayOf(0x00, 0x00, 0x01),
                 presentationTimeUs = 1000,
-                flags = 1,
+                flags = FLAG_KEY_FRAME,
             ),
         )
         TsMuxerNode.ingestAudio(
@@ -59,9 +71,9 @@ class TsMuxerNodeTest {
         TsMuxerNode.start()
 
         val stats = TsMuxerNode.runtimeStats()
-        assertEquals(1, stats.videoAccessUnitsIngested)
-        assertEquals(1, stats.audioAccessUnitsIngested)
-        assertEquals(2, stats.packetsDrained)
+        assertEquals(2, stats.videoAccessUnitsIngested)
+        assertEquals(0, stats.audioAccessUnitsIngested)
+        assertEquals(1, stats.packetsDrained)
     }
 
     @Test
@@ -72,9 +84,16 @@ class TsMuxerNodeTest {
         TsMuxerNode.prepare()
         TsMuxerNode.ingestVideo(
             VideoEncoderNode.EncodedAccessUnit(
+                data = byteArrayOf(0x00, 0x00, 0x00, 0x01, 0x67),
+                presentationTimeUs = 0,
+                flags = FLAG_CODEC_CONFIG,
+            ),
+        )
+        TsMuxerNode.ingestVideo(
+            VideoEncoderNode.EncodedAccessUnit(
                 data = byteArrayOf(0x00, 0x00, 0x01),
                 presentationTimeUs = 1000,
-                flags = 1,
+                flags = FLAG_KEY_FRAME,
             ),
         )
         TsMuxerNode.ingestAudio(
@@ -89,9 +108,9 @@ class TsMuxerNodeTest {
         TsMuxerNode.start()
 
         val stats = TsMuxerNode.runtimeStats()
-        assertEquals(1, stats.videoAccessUnitsIngested)
-        assertEquals(1, stats.audioAccessUnitsIngested)
-        assertEquals(2, stats.packetsDrained)
+        assertEquals(2, stats.videoAccessUnitsIngested)
+        assertEquals(0, stats.audioAccessUnitsIngested)
+        assertEquals(1, stats.packetsDrained)
     }
 
     @Test
@@ -103,9 +122,16 @@ class TsMuxerNodeTest {
         TsMuxerNode.start()
         TsMuxerNode.ingestVideo(
             VideoEncoderNode.EncodedAccessUnit(
+                data = byteArrayOf(0x00, 0x00, 0x00, 0x01, 0x67),
+                presentationTimeUs = 0,
+                flags = FLAG_CODEC_CONFIG,
+            ),
+        )
+        TsMuxerNode.ingestVideo(
+            VideoEncoderNode.EncodedAccessUnit(
                 data = byteArrayOf(0x00, 0x00, 0x01),
                 presentationTimeUs = 1000,
-                flags = 1,
+                flags = FLAG_KEY_FRAME,
             ),
         )
         TsMuxerNode.ingestAudio(
@@ -117,9 +143,9 @@ class TsMuxerNodeTest {
         )
 
         val stats = TsMuxerNode.runtimeStats()
-        assertEquals(1, stats.videoAccessUnitsIngested)
-        assertEquals(1, stats.audioAccessUnitsIngested)
-        assertEquals(2, stats.packetsDrained)
+        assertEquals(2, stats.videoAccessUnitsIngested)
+        assertEquals(0, stats.audioAccessUnitsIngested)
+        assertEquals(1, stats.packetsDrained)
     }
 
     private class FakeRuntime(
