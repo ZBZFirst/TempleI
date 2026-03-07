@@ -42,9 +42,16 @@ object AudioEncoderNode {
     private var activeConfig: EncoderConfig = EncoderConfig()
     private var codec: MediaCodec? = null
     private var audioRecord: AudioRecord? = null
+    private var audioConfig = AudioConfig()
     private var captureThread: Thread? = null
     @Volatile
     private var captureLoopActive = false
+
+    private data class AudioConfig(
+        val profile: Int = MediaCodecInfo.CodecProfileLevel.AACObjectLC,
+        val sampleRateIndex: Int = 3,
+        val channelConfig: Int = 1,
+    )
 
     fun configure(config: EncoderConfig): Result<Unit> {
         if (config.sampleRate <= 0 || config.channelCount <= 0 || config.bitrate <= 0) {
@@ -133,6 +140,7 @@ object AudioEncoderNode {
         runCatching { codec?.stop() }
         runCatching { codec?.release() }
         codec = null
+        audioConfig = AudioConfig()
 
         nodeState = NodeState.Idle
         lastError = ""
@@ -173,7 +181,10 @@ object AudioEncoderNode {
         while (true) {
             when (val outputIndex = activeCodec.dequeueOutputBuffer(bufferInfo, 0)) {
                 MediaCodec.INFO_TRY_AGAIN_LATER -> return
-                MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> Unit
+                MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
+                    audioConfig = extractAudioConfig(activeCodec.outputFormat)
+                }
+
                 else -> {
                     if (outputIndex >= 0) {
                         val outputBuffer = activeCodec.getOutputBuffer(outputIndex)
@@ -183,18 +194,58 @@ object AudioEncoderNode {
                             outputBuffer.limit(bufferInfo.offset + bufferInfo.size)
                             outputBuffer.get(payload)
 
-                            outputListener?.invoke(
-                                EncodedAccessUnit(
-                                    data = payload,
-                                    presentationTimeUs = bufferInfo.presentationTimeUs,
-                                    flags = bufferInfo.flags,
-                                ),
-                            )
+                            if ((bufferInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG) == 0) {
+                                val adtsPayload = addAdtsHeader(payload, audioConfig)
+                                outputListener?.invoke(
+                                    EncodedAccessUnit(
+                                        data = adtsPayload,
+                                        presentationTimeUs = bufferInfo.presentationTimeUs,
+                                        flags = bufferInfo.flags,
+                                    ),
+                                )
+                            }
                         }
                         activeCodec.releaseOutputBuffer(outputIndex, false)
                     }
                 }
             }
         }
+    }
+
+    private fun extractAudioConfig(format: MediaFormat): AudioConfig {
+        val csd0 = format.getByteBuffer("csd-0") ?: return audioConfig
+        val dup = csd0.duplicate()
+        if (dup.remaining() < 2) {
+            return audioConfig
+        }
+
+        val first = dup.get().toInt() and 0xFF
+        val second = dup.get().toInt() and 0xFF
+        val objectType = (first shr 3) and 0x1F
+        val sampleRateIndex = ((first and 0x07) shl 1) or ((second shr 7) and 0x01)
+        val channelConfig = (second shr 3) and 0x0F
+        return AudioConfig(
+            profile = if (objectType <= 0) MediaCodecInfo.CodecProfileLevel.AACObjectLC else objectType,
+            sampleRateIndex = sampleRateIndex,
+            channelConfig = channelConfig,
+        )
+    }
+
+    private fun addAdtsHeader(payload: ByteArray, config: AudioConfig): ByteArray {
+        val frameLength = payload.size + 7
+        val profile = (config.profile - 1).coerceAtLeast(0)
+        val freqIdx = config.sampleRateIndex.coerceIn(0, 12)
+        val chanCfg = config.channelConfig.coerceIn(1, 7)
+
+        val header = ByteArray(7)
+        header[0] = 0xFF.toByte()
+        header[1] = 0xF1.toByte()
+        header[2] = (((profile and 0x03) shl 6) or ((freqIdx and 0x0F) shl 2) or ((chanCfg shr 2) and 0x01)).toByte()
+        header[3] = ((((chanCfg and 0x03) shl 6) or ((frameLength shr 11) and 0x03))).toByte()
+        header[4] = ((frameLength shr 3) and 0xFF).toByte()
+        header[5] = ((((frameLength and 0x07) shl 5) or 0x1F)).toByte()
+        header[6] = 0xFC.toByte()
+
+        return header + payload
     }
 }

@@ -2,7 +2,7 @@ package com.example.templei.feature.camera
 
 import android.content.ContentValues
 import android.content.Context
-import android.media.ImageFormat
+import android.graphics.ImageFormat
 import android.provider.MediaStore
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
