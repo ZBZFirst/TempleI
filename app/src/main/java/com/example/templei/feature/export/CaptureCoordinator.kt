@@ -190,16 +190,16 @@ object CaptureCoordinator {
                 }
                 when (item) {
                     is MuxIngressItem.Video -> {
-                        val ingestResult: Result<Unit> = TsMuxerNode.ingestVideo(item.accessUnit)
+                        val ingestResult: Result<Unit> = NativeStreamBackends.pushVideoAccessUnit(item.accessUnit)
                         if (ingestResult.isFailure) {
-                            Log.e(TAG, "video->mux ingest failed: ${ingestResult.exceptionOrNull()?.message.orEmpty()}")
+                            Log.e(TAG, "video->backend ingest failed: ${ingestResult.exceptionOrNull()?.message.orEmpty()}")
                         }
                     }
 
                     is MuxIngressItem.Audio -> {
-                        val ingestResult: Result<Unit> = TsMuxerNode.ingestAudio(item.accessUnit)
+                        val ingestResult: Result<Unit> = NativeStreamBackends.pushAudioAccessUnit(item.accessUnit)
                         if (ingestResult.isFailure) {
-                            Log.e(TAG, "audio->mux ingest failed: ${ingestResult.exceptionOrNull()?.message.orEmpty()}")
+                            Log.e(TAG, "audio->backend ingest failed: ${ingestResult.exceptionOrNull()?.message.orEmpty()}")
                         }
                     }
 

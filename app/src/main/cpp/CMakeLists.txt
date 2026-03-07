@@ -10,8 +10,13 @@ add_library(templei_srt SHARED
     templei_srt_stub.cpp
 )
 
+add_library(templei_ffmpeg SHARED
+    templei_ffmpeg_stub.cpp
+)
+
 find_library(log-lib log)
 find_library(dl-lib dl)
 
 target_link_libraries(templei_mux ${log-lib})
 target_link_libraries(templei_srt ${log-lib} ${dl-lib})
+target_link_libraries(templei_ffmpeg ${log-lib})
