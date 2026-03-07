@@ -67,6 +67,7 @@ object TsMuxerNode {
         val startResult = resolved.getOrThrow().start()
         if (startResult.isSuccess) {
             started = true
+            Log.i(TAG, "muxer-start container=MPEG-TS packetSize=188")
             flushPendingAccessUnits()
         }
         return startResult
@@ -213,6 +214,10 @@ object TsMuxerNode {
             packetsDrained += 1
             bytesHandedToSrt += packet.size
             StreamPipelineMetrics.recordMuxPacketDrain()
+            if (packetsDrained <= 5 || (packetsDrained % 300L) == 0L) {
+                val syncByteOk = packet.firstOrNull() == 0x47.toByte()
+                Log.i(TAG, "mux-packet index=$packetsDrained bytes=${packet.size} sync47=$syncByteOk")
+            }
             packetOutputListener?.invoke(packet)
         }
     }
