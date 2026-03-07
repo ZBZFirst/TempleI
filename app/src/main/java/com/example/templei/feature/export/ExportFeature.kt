@@ -105,7 +105,7 @@ object ExportFeature {
         val validation = validateConfig(config)
         lastConnectionTest = when {
             !validation.isValid -> "transport not ready: ${validation.message}"
-            !transportGateway.isAvailable() -> transportAvailabilityMessage()
+            !transportGateway.isAvailable() -> "${TsMuxerNode.availabilityMessage()}; sender unavailable"
             else -> "endpoint configuration valid"
         }
         return lastConnectionTest
@@ -119,7 +119,7 @@ object ExportFeature {
 
         if (!transportGateway.isAvailable()) {
             sessionState = SessionState.Faulted
-            lastError = transportAvailabilityMessage()
+            lastError = "${TsMuxerNode.availabilityMessage()}; sender unavailable"
             return StreamResult(state = sessionState, error = lastError)
         }
 
