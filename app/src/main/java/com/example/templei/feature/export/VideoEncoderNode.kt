@@ -69,8 +69,9 @@ object VideoEncoderNode {
             return Result.failure(IllegalStateException(lastError))
         }
 
+        // Intentionally keep video placeholder silent until real MediaCodec output is wired.
+        // Sending synthetic/invalid H.264 data causes continuous OBS decoder error flooding.
         nodeState = NodeState.Running
-        startSyntheticEmissionLoop()
         return Result.success(Unit)
     }
 
@@ -84,30 +85,4 @@ object VideoEncoderNode {
     fun state(): NodeState = nodeState
 
     fun error(): String = lastError
-
-    private fun startSyntheticEmissionLoop() {
-        scheduler?.shutdownNow()
-        val fps = activeConfig.fps.coerceAtLeast(1)
-        val periodMs = (1_000L / fps).coerceAtLeast(16L)
-        val executor = Executors.newSingleThreadScheduledExecutor()
-        scheduler = executor
-
-        // Keep emitting placeholder AUs so mux/SRT counters keep moving during integration.
-        executor.scheduleAtFixedRate(
-            {
-                if (nodeState != NodeState.Running) {
-                    return@scheduleAtFixedRate
-                }
-                val sample = EncodedAccessUnit(
-                    data = syntheticSpsPpsIdr,
-                    presentationTimeUs = System.nanoTime() / 1_000,
-                    flags = 1,
-                )
-                outputListener?.invoke(sample)
-            },
-            0,
-            periodMs,
-            TimeUnit.MILLISECONDS,
-        )
-    }
 }

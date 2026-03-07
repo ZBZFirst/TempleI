@@ -183,7 +183,8 @@ object ExportFeature {
             else -> {
                 "streaming health: mux(v=${muxStats.videoAccessUnitsIngested},a=${muxStats.audioAccessUnitsIngested},ts=${muxStats.packetsDrained}) " +
                     "srt(sent=${srtStats.packetsSent},bytes=${srtStats.bytesSent},state=${srtStats.socketState}," +
-                    "last=${srtStats.lastSendResult},retries=${srtStats.reconnectAttempts},native=${srtStats.nativeStatsSnapshot})"
+                    "last=${srtStats.lastSendResult},retries=${srtStats.reconnectAttempts},native=${srtStats.nativeStatsSnapshot})" +
+                    if (muxStats.videoAccessUnitsIngested == 0L) " | video placeholder muted (waiting for real encoder path)" else ""
             }
         }
     }
