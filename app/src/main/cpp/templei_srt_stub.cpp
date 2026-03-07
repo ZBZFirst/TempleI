@@ -6,6 +6,7 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
+#include <cerrno>
 #include <cstdint>
 #include <cstring>
 #include <mutex>
@@ -25,6 +26,9 @@ struct SrtApi {
     int (*connect)(SrtSocket, const sockaddr*, int) = nullptr;
     int (*send)(SrtSocket, const char*, int) = nullptr;
     int (*close)(SrtSocket) = nullptr;
+    int (*setsockopt)(SrtSocket, int, const void*, int) = nullptr;
+    int (*getsockstate)(SrtSocket) = nullptr;
+    const char* (*lasterror_str)() = nullptr;
 };
 
 struct SenderState {
@@ -34,12 +38,22 @@ struct SenderState {
     bool sending = false;
     std::string lastError;
     std::string runtimeInfo;
+    int lastSendCode = 0;
+    int lastConnectCode = 0;
+    long long packetsSent = 0;
+    long long bytesSent = 0;
+    std::string socketState = "SRTS_NONEXIST";
 };
 
 std::mutex gMutex;
 SenderState gState;
 
 constexpr const char* kRuntimeExpectedPath = "app/src/main/jniLibs/<abi>/libsrt.so";
+constexpr int kSrtSuccess = 0;
+constexpr int kSrtError = -1;
+constexpr int kSockoptSndLatency = 13;
+constexpr int kSockoptRcvLatency = 14;
+constexpr int kSockoptConnTimeout = 36;
 
 const char* currentAbi() {
 #if defined(__aarch64__)
@@ -53,6 +67,37 @@ const char* currentAbi() {
 #else
     return "unknown";
 #endif
+}
+
+std::string stateName(int state) {
+    switch (state) {
+        case 1: return "SRTS_INIT";
+        case 2: return "SRTS_OPENED";
+        case 3: return "SRTS_LISTENING";
+        case 4: return "SRTS_CONNECTING";
+        case 5: return "SRTS_CONNECTED";
+        case 6: return "SRTS_BROKEN";
+        case 7: return "SRTS_CLOSING";
+        case 8: return "SRTS_CLOSED";
+        case 9: return "SRTS_NONEXIST";
+        default: return "SRTS_UNKNOWN(" + std::to_string(state) + ")";
+    }
+}
+
+void refreshSocketState() {
+    if (gState.socket < 0 || gState.api.getsockstate == nullptr) {
+        gState.socketState = "SRTS_NONEXIST";
+        return;
+    }
+    gState.socketState = stateName(gState.api.getsockstate(gState.socket));
+}
+
+std::string lastSrtErrorMessage() {
+    if (gState.api.lasterror_str == nullptr) {
+        return "srt error unavailable";
+    }
+    const char* detail = gState.api.lasterror_str();
+    return detail != nullptr ? detail : "srt error unavailable";
 }
 
 void setError(const std::string& message) {
@@ -87,6 +132,9 @@ bool loadApi() {
         gState.api.connect = reinterpret_cast<int (*)(SrtSocket, const sockaddr*, int)>(dlsym(handle, "srt_connect"));
         gState.api.send = reinterpret_cast<int (*)(SrtSocket, const char*, int)>(dlsym(handle, "srt_send"));
         gState.api.close = reinterpret_cast<int (*)(SrtSocket)>(dlsym(handle, "srt_close"));
+        gState.api.setsockopt = reinterpret_cast<int (*)(SrtSocket, int, const void*, int)>(dlsym(handle, "srt_setsockopt"));
+        gState.api.getsockstate = reinterpret_cast<int (*)(SrtSocket)>(dlsym(handle, "srt_getsockstate"));
+        gState.api.lasterror_str = reinterpret_cast<const char* (*)()>(dlsym(handle, "srt_getlasterror_str"));
 
         if (gState.api.startup != nullptr &&
             gState.api.cleanup != nullptr &&
@@ -139,6 +187,26 @@ void closeSocketIfOpen() {
     gState.socket = -1;
     gState.connected = false;
     gState.sending = false;
+    gState.socketState = "SRTS_NONEXIST";
+}
+
+void configureSocketOption(SrtSocket sock, int opt, int value) {
+    if (gState.api.setsockopt == nullptr) {
+        return;
+    }
+    gState.api.setsockopt(sock, opt, &value, sizeof(value));
+}
+
+std::string buildStatsSnapshot() {
+    std::ostringstream stats;
+    stats << "state=" << gState.socketState
+          << ",connected=" << (gState.connected ? "1" : "0")
+          << ",sending=" << (gState.sending ? "1" : "0")
+          << ",packets=" << gState.packetsSent
+          << ",bytes=" << gState.bytesSent
+          << ",last_connect_code=" << gState.lastConnectCode
+          << ",last_send_code=" << gState.lastSendCode;
+    return stats.str();
 }
 
 } // namespace
@@ -149,19 +217,24 @@ Java_com_example_templei_feature_export_SrtNativeBridge_nativeConnect(
         jobject,
         jstring host,
         jint port,
-        jint,
-        jstring) {
+        jint latencyMs,
+        jstring,
+        jint timeoutUs) {
     std::lock_guard<std::mutex> lock(gMutex);
 
     closeSocketIfOpen();
     gState.lastError.clear();
+    gState.lastSendCode = 0;
+    gState.lastConnectCode = 0;
+    gState.packetsSent = 0;
+    gState.bytesSent = 0;
 
     if (!loadApi()) {
         return JNI_FALSE;
     }
 
-    if (gState.api.startup() != 0) {
-        setError("srt_startup failed");
+    if (gState.api.startup() != kSrtSuccess) {
+        setError("srt_startup failed: " + lastSrtErrorMessage());
         return JNI_FALSE;
     }
 
@@ -173,9 +246,13 @@ Java_com_example_templei_feature_export_SrtNativeBridge_nativeConnect(
 
     gState.socket = gState.api.create_socket();
     if (gState.socket < 0) {
-        setError("srt_create_socket failed");
+        setError("srt_create_socket failed: " + lastSrtErrorMessage());
         return JNI_FALSE;
     }
+
+    configureSocketOption(gState.socket, kSockoptSndLatency, latencyMs);
+    configureSocketOption(gState.socket, kSockoptRcvLatency, latencyMs);
+    configureSocketOption(gState.socket, kSockoptConnTimeout, timeoutUs);
 
     sockaddr_in address{};
     address.sin_family = AF_INET;
@@ -186,13 +263,17 @@ Java_com_example_templei_feature_export_SrtNativeBridge_nativeConnect(
         return JNI_FALSE;
     }
 
-    if (gState.api.connect(gState.socket, reinterpret_cast<sockaddr*>(&address), sizeof(address)) != 0) {
-        setError("srt_connect failed");
+    gState.lastConnectCode = gState.api.connect(gState.socket, reinterpret_cast<sockaddr*>(&address), sizeof(address));
+    refreshSocketState();
+    if (gState.lastConnectCode != kSrtSuccess) {
+        setError("srt_connect failed (code=" + std::to_string(gState.lastConnectCode) +
+                 ", state=" + gState.socketState + ", detail=" + lastSrtErrorMessage() + ")");
         closeSocketIfOpen();
         return JNI_FALSE;
     }
 
     gState.connected = true;
+    refreshSocketState();
     return JNI_TRUE;
 }
 
@@ -201,8 +282,9 @@ Java_com_example_templei_feature_export_SrtNativeBridge_nativeStartSending(
         JNIEnv*,
         jobject) {
     std::lock_guard<std::mutex> lock(gMutex);
+    refreshSocketState();
     if (!gState.connected || gState.socket < 0) {
-        setError("transport not connected");
+        setError("transport not connected (state=" + gState.socketState + ")");
         return JNI_FALSE;
     }
     gState.sending = true;
@@ -215,8 +297,9 @@ Java_com_example_templei_feature_export_SrtNativeBridge_nativeSendPacket(
         jobject,
         jbyteArray packet) {
     std::lock_guard<std::mutex> lock(gMutex);
+    refreshSocketState();
     if (!gState.sending || gState.socket < 0) {
-        setError("transport not sending");
+        setError("transport not sending (state=" + gState.socketState + ")");
         return JNI_FALSE;
     }
     if (packet == nullptr) {
@@ -233,12 +316,15 @@ Java_com_example_templei_feature_export_SrtNativeBridge_nativeSendPacket(
     buffer.resize(static_cast<size_t>(length));
     env->GetByteArrayRegion(packet, 0, length, reinterpret_cast<jbyte*>(buffer.data()));
 
-    const int sent = gState.api.send(gState.socket, buffer.data(), length);
-    if (sent < 0) {
-        setError("srt_send failed");
+    gState.lastSendCode = gState.api.send(gState.socket, buffer.data(), length);
+    refreshSocketState();
+    if (gState.lastSendCode == kSrtError) {
+        setError("srt_send failed (state=" + gState.socketState + ", detail=" + lastSrtErrorMessage() + ")");
         return JNI_FALSE;
     }
 
+    gState.packetsSent += 1;
+    gState.bytesSent += gState.lastSendCode;
     return JNI_TRUE;
 }
 
@@ -267,4 +353,23 @@ Java_com_example_templei_feature_export_SrtNativeBridge_nativeRuntimeInfo(
         jobject) {
     std::lock_guard<std::mutex> lock(gMutex);
     return env->NewStringUTF(gState.runtimeInfo.c_str());
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_example_templei_feature_export_SrtNativeBridge_nativeStatsSnapshot(
+        JNIEnv* env,
+        jobject) {
+    std::lock_guard<std::mutex> lock(gMutex);
+    refreshSocketState();
+    const std::string snapshot = buildStatsSnapshot();
+    return env->NewStringUTF(snapshot.c_str());
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_example_templei_feature_export_SrtNativeBridge_nativeSocketState(
+        JNIEnv* env,
+        jobject) {
+    std::lock_guard<std::mutex> lock(gMutex);
+    refreshSocketState();
+    return env->NewStringUTF(gState.socketState.c_str());
 }

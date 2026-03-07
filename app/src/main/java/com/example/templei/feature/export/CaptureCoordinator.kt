@@ -68,6 +68,9 @@ object CaptureCoordinator {
         AudioEncoderNode.setOutputListener { accessUnit ->
             TsMuxerNode.ingestAudio(accessUnit)
         }
+        CameraFeature.setFrameOutputListener { frame ->
+            VideoEncoderNode.queueFrame(frame)
+        }
 
         val videoStarted = VideoEncoderNode.start()
         if (videoStarted.isFailure) {
@@ -83,6 +86,7 @@ object CaptureCoordinator {
     }
 
     fun stopCapturePathSession() {
+        CameraFeature.setFrameOutputListener(null)
         VideoEncoderNode.setOutputListener(null)
         AudioEncoderNode.setOutputListener(null)
         VideoEncoderNode.stop()

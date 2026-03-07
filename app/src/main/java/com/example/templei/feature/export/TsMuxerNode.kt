@@ -15,6 +15,8 @@ object TsMuxerNode {
     private var videoAccessUnitsIngested: Long = 0
     private var audioAccessUnitsIngested: Long = 0
     private var packetsDrained: Long = 0
+    private val pendingVideoAccessUnits = ArrayDeque<VideoEncoderNode.EncodedAccessUnit>()
+    private val pendingAudioAccessUnits = ArrayDeque<AudioEncoderNode.EncodedAccessUnit>()
 
     /**
      * Probe for runtime availability once and cache the result.
@@ -44,6 +46,7 @@ object TsMuxerNode {
             videoAccessUnitsIngested = 0
             audioAccessUnitsIngested = 0
             packetsDrained = 0
+            // Preserve pending access units so capture bootstrap emitted before prepare/start still flushes.
         }
         return result
     }
@@ -57,13 +60,16 @@ object TsMuxerNode {
         val startResult = resolved.getOrThrow().start()
         if (startResult.isSuccess) {
             started = true
+            flushPendingAccessUnits()
         }
         return startResult
     }
 
     fun ingestVideo(accessUnit: VideoEncoderNode.EncodedAccessUnit): Result<Unit> {
         if (!started) {
-            return Result.failure(IllegalStateException("mux not started"))
+            // Capture path currently boots before transport start; queue until mux starts.
+            pendingVideoAccessUnits += accessUnit
+            return Result.success(Unit)
         }
 
         val resolved = resolveRuntime()
@@ -85,7 +91,9 @@ object TsMuxerNode {
 
     fun ingestAudio(accessUnit: AudioEncoderNode.EncodedAccessUnit): Result<Unit> {
         if (!started) {
-            return Result.failure(IllegalStateException("mux not started"))
+            // Capture path currently boots before transport start; queue until mux starts.
+            pendingAudioAccessUnits += accessUnit
+            return Result.success(Unit)
         }
 
         val resolved = resolveRuntime()
@@ -110,6 +118,8 @@ object TsMuxerNode {
             resolveRuntime().onSuccess { it.stop() }
         }
         started = false
+        pendingVideoAccessUnits.clear()
+        pendingAudioAccessUnits.clear()
         packetOutputListener = null
     }
 
@@ -124,11 +134,40 @@ object TsMuxerNode {
             else -> RuntimeBinding.Loaded(testRuntime)
         }
         started = false
+        pendingVideoAccessUnits.clear()
+        pendingAudioAccessUnits.clear()
+    }
+
+
+    private fun flushPendingAccessUnits() {
+        if (!started) {
+            return
+        }
+
+        while (pendingVideoAccessUnits.isNotEmpty()) {
+            val accessUnit = pendingVideoAccessUnits.removeFirst()
+            val result = ingestVideo(accessUnit)
+            if (result.isFailure) {
+                break
+            }
+        }
+
+        while (pendingAudioAccessUnits.isNotEmpty()) {
+            val accessUnit = pendingAudioAccessUnits.removeFirst()
+            val result = ingestAudio(accessUnit)
+            if (result.isFailure) {
+                break
+            }
+        }
     }
 
     private fun drainPacketToOutput() {
-        val packet = resolveRuntime().getOrNull()?.drainPacket() ?: return
-        if (packet.isNotEmpty()) {
+        val runtimeInstance = resolveRuntime().getOrNull() ?: return
+        while (true) {
+            val packet = runtimeInstance.drainPacket()
+            if (packet.isEmpty()) {
+                break
+            }
             packetsDrained += 1
             packetOutputListener?.invoke(packet)
         }
