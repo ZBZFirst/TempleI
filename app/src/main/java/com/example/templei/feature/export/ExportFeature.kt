@@ -176,7 +176,7 @@ object ExportFeature {
         }
 
         if (!TsMuxerNode.isAvailable() || !SrtTransportNode.isAvailable()) {
-            return "UI/config ready; waiting for native mpegts+srt runtime"
+            return "${transportAvailabilityMessage()}; waiting for live transport health"
         }
 
         return "ready for OBS listener ingest"
@@ -194,6 +194,12 @@ object ExportFeature {
             latencyMs = 120,
             mode = "listener",
         )
+    }
+
+    private fun transportAvailabilityMessage(): String {
+        val muxMessage = TsMuxerNode.availabilityMessage()
+        val srtMessage = SrtTransportNode.availabilityMessage()
+        return "$muxMessage; $srtMessage"
     }
 
     interface StreamTransportGateway {
@@ -215,7 +221,7 @@ object ExportFeature {
 
             val connected = SrtTransportNode.connect(endpoint)
             if (connected.isFailure) {
-                return Result.failure(IllegalStateException("sender unavailable"))
+                return Result.failure(IllegalStateException(SrtTransportNode.availabilityMessage()))
             }
 
             val muxStarted = TsMuxerNode.start()
@@ -225,7 +231,7 @@ object ExportFeature {
 
             val sendingStarted = SrtTransportNode.startSending()
             if (sendingStarted.isFailure) {
-                return Result.failure(IllegalStateException("sender unavailable"))
+                return Result.failure(IllegalStateException(SrtTransportNode.availabilityMessage()))
             }
 
             return Result.success(Unit)
