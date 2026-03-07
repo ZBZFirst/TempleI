@@ -5,7 +5,7 @@ import com.example.templei.feature.camera.CameraFeature
 /**
  * Coordinates Screen 2 capture-path readiness checks before transport start.
  *
- * TODO: Attach real camera output surfaces/streams to `VideoEncoderNode` once encoder path is implemented.
+ * TODO: Attach real camera/microphone outputs to encoder nodes once encode path is implemented.
  */
 object CaptureCoordinator {
     data class StartResult(
@@ -13,7 +13,7 @@ object CaptureCoordinator {
         val error: String? = null,
     )
 
-    fun startVideoPathSession(config: ExportFeature.ObsStreamConfig): StartResult {
+    fun startCapturePathSession(config: ExportFeature.ObsStreamConfig): StartResult {
         if (config.host.isBlank()) {
             return StartResult(isReady = false, error = "host missing")
         }
@@ -22,7 +22,7 @@ object CaptureCoordinator {
             return StartResult(isReady = false, error = "camera preview not running")
         }
 
-        val encoderConfig = when (config.profile) {
+        val videoEncoderConfig = when (config.profile) {
             "Low Latency" -> VideoEncoderNode.EncoderConfig(
                 width = 1280,
                 height = 720,
@@ -38,20 +38,45 @@ object CaptureCoordinator {
             )
         }
 
-        val configured = VideoEncoderNode.configure(encoderConfig)
-        if (configured.isFailure) {
+        val audioEncoderConfig = when (config.profile) {
+            "Low Latency" -> AudioEncoderNode.EncoderConfig(
+                sampleRate = 48_000,
+                channelCount = 1,
+                bitrate = 64_000,
+            )
+
+            else -> AudioEncoderNode.EncoderConfig(
+                sampleRate = 48_000,
+                channelCount = 1,
+                bitrate = 96_000,
+            )
+        }
+
+        val videoConfigured = VideoEncoderNode.configure(videoEncoderConfig)
+        if (videoConfigured.isFailure) {
             return StartResult(isReady = false, error = VideoEncoderNode.error())
         }
 
-        val started = VideoEncoderNode.start()
-        if (started.isFailure) {
+        val audioConfigured = AudioEncoderNode.configure(audioEncoderConfig)
+        if (audioConfigured.isFailure) {
+            return StartResult(isReady = false, error = AudioEncoderNode.error())
+        }
+
+        val videoStarted = VideoEncoderNode.start()
+        if (videoStarted.isFailure) {
             return StartResult(isReady = false, error = VideoEncoderNode.error())
+        }
+
+        val audioStarted = AudioEncoderNode.start()
+        if (audioStarted.isFailure) {
+            return StartResult(isReady = false, error = AudioEncoderNode.error())
         }
 
         return StartResult(isReady = true)
     }
 
-    fun stopVideoPathSession() {
+    fun stopCapturePathSession() {
         VideoEncoderNode.stop()
+        AudioEncoderNode.stop()
     }
 }

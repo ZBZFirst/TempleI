@@ -27,7 +27,7 @@ class StreamSessionService : Service() {
 
     inner class LocalBinder : Binder() {
         fun startSession(config: ExportFeature.ObsStreamConfig): ExportFeature.StreamResult {
-            val captureReady = CaptureCoordinator.startVideoPathSession(config)
+            val captureReady = CaptureCoordinator.startCapturePathSession(config)
             if (!captureReady.isReady) {
                 return ExportFeature.markFault(captureReady.error.orEmpty())
             }
@@ -37,7 +37,7 @@ class StreamSessionService : Service() {
         }
 
         fun stopSession(): ExportFeature.StreamResult {
-            CaptureCoordinator.stopVideoPathSession()
+            CaptureCoordinator.stopCapturePathSession()
             val result = ExportFeature.stopStream()
             stopForegroundSession()
             return result

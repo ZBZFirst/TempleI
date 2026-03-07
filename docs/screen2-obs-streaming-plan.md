@@ -95,7 +95,8 @@ This plan keeps **Screen 1 camera behavior unchanged** and uses **Screen 2** as 
 
 
 ## Latest completion notes
-- Round 3 video-path contract is now wired: `StreamSessionService` calls `CaptureCoordinator`, which checks camera preview readiness and starts/stops `VideoEncoderNode` before transport start/stop.
+- Round 4 audio-path contract is now wired: `CaptureCoordinator` configures/starts `AudioEncoderNode` and stops it during session teardown to keep A/V path orchestration paired.
+- Round 3 video-path contract is now wired: `StreamSessionService` calls `CaptureCoordinator`, which checks camera preview readiness and starts/stops video/audio encoder nodes before transport start/stop.
 - Service/session boundary is now implemented with `StreamSessionService` and a binder command channel from `Screen2Activity` for Start/Stop stream actions.
 - Validation no longer immediately faults Screen 2 for missing host/port; invalid endpoint input now keeps session state in `Idle` with explicit validation messages.
 - Validate and Start now prompt for host input when empty to reduce dead-end `host missing` flows.
