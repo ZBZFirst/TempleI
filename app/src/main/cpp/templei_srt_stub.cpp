@@ -316,15 +316,29 @@ Java_com_example_templei_feature_export_SrtNativeBridge_nativeSendPacket(
     buffer.resize(static_cast<size_t>(length));
     env->GetByteArrayRegion(packet, 0, length, reinterpret_cast<jbyte*>(buffer.data()));
 
-    gState.lastSendCode = gState.api.send(gState.socket, buffer.data(), length);
-    refreshSocketState();
-    if (gState.lastSendCode == kSrtError) {
-        setError("srt_send failed (state=" + gState.socketState + ", detail=" + lastSrtErrorMessage() + ")");
-        return JNI_FALSE;
+    int bytesSentTotal = 0;
+    while (bytesSentTotal < length) {
+        const int remaining = length - bytesSentTotal;
+        const char* sendPtr = buffer.data() + bytesSentTotal;
+        gState.lastSendCode = gState.api.send(gState.socket, sendPtr, remaining);
+        refreshSocketState();
+        if (gState.lastSendCode == kSrtError) {
+            setError("srt_send failed (state=" + gState.socketState + ", sent=" +
+                     std::to_string(bytesSentTotal) + "/" + std::to_string(length) +
+                     ", detail=" + lastSrtErrorMessage() + ")");
+            return JNI_FALSE;
+        }
+        if (gState.lastSendCode <= 0) {
+            setError("srt_send returned non-progress result (state=" + gState.socketState +
+                     ", sent=" + std::to_string(bytesSentTotal) + "/" +
+                     std::to_string(length) + ")");
+            return JNI_FALSE;
+        }
+        bytesSentTotal += gState.lastSendCode;
     }
 
     gState.packetsSent += 1;
-    gState.bytesSent += gState.lastSendCode;
+    gState.bytesSent += bytesSentTotal;
     return JNI_TRUE;
 }
 
