@@ -86,6 +86,7 @@ object VideoEncoderNode {
                 configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
                 start()
             }
+            Log.i(TAG, "codec-start mime=$MIME_TYPE width=${activeConfig.width} height=${activeConfig.height} fps=${activeConfig.fps} bitrate=${activeConfig.bitrate}")
             nodeState = NodeState.Running
             drainOutput()
         }.onFailure {
@@ -195,7 +196,7 @@ object VideoEncoderNode {
                             if (containsPps) ppsSeen = true
                             if (containsIdr && !firstIdrSeen) {
                                 firstIdrSeen = true
-                                Log.i(TAG, "first-idr spsBefore=$spsSeen ppsBefore=$ppsSeen")
+                                Log.i(TAG, "first-idr-delivered ptsUs=${bufferInfo.presentationTimeUs} bytes=${accessUnitWithConfig.size} spsSeen=$spsSeen ppsSeen=$ppsSeen")
                             }
                             if (firstOutputLogs < 5) {
                                 Log.i(
@@ -216,11 +217,13 @@ object VideoEncoderNode {
     private fun emitCodecConfig(format: MediaFormat) {
         val csd0 = format.getByteBuffer("csd-0")
         val csd1 = format.getByteBuffer("csd-1")
+        Log.i(TAG, "codec-format mime=${format.getString(MediaFormat.KEY_MIME)} hasCsd0=${csd0 != null} hasCsd1=${csd1 != null}")
         val configPayload = mergeAnnexB(csd0, csd1)
         if (configPayload.isEmpty()) {
             return
         }
         codecConfigAnnexB = configPayload
+        Log.i(TAG, "codec-config-annexb bytes=${configPayload.size}")
         outputListener?.invoke(
             EncodedAccessUnit(
                 data = configPayload,
