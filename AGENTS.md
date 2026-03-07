@@ -168,3 +168,15 @@ Risks that usually force extra back-and-forth:
 - [COMPLETED] Round 4: Audio path pass (mic ingest + A/V clock alignment for stream path).
 - [COMPLETED] Round 5: MPEG-TS mux + SRT transport pass (native mux/sender integration behind transport boundary).
 - [COMPLETED] Round 6: OBS interoperability/tuning pass (latency, reconnect behavior, user-facing diagnostics).
+
+
+## Runtime limitation and next implementation target
+- Current status: **actual live OBS ingest is not fully connected yet**.
+- Reason: `TsMuxerNode` and `SrtTransportNode` are contract placeholders and still report runtime unavailability until native mux/sender integration is implemented.
+- Planned follow-up (next implementation target):
+  1. Implement native MPEG-TS mux runtime behind `TsMuxerNode`.
+  2. Implement native SRT sender runtime behind `SrtTransportNode`.
+  3. Wire runtime availability checks to return ready states when native layers are loaded.
+  4. Validate end-to-end ingest in OBS Media Source using Screen 2 Start/Stop flow.
+  5. Update Screen 2 diagnostics text from "runtime pending" to live transport health states.
+
