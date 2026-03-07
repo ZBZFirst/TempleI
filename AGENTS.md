@@ -95,6 +95,9 @@ Use the entries below for Obsidian graph/linking. Paths are repo-relative and in
 ## Current implementation snapshot (as of latest reviewed commit)
 - `Screen1Activity` + `CameraFeature` currently provide camera preview, picture capture, and video recording (with microphone) and persist media into `Pictures/TempleI` and `Movies/TempleI`.
 - `Screen2Activity` and `activity_screen2.xml` now implement OBS SRT ingest configuration and control wiring (host/port edit, validate/test, preset reset, URL display, profile toggle, start/stop), and bind to a foreground-capable stream session service boundary.
+- Screen responsibility split is strict:
+  - Screen 1 hosts camera preview/capture controls.
+  - Screen 2 hosts configuration + start/stop stream commands only, with **no camera preview UI**.
 - `feature/export/ExportFeature.kt` now holds Screen 2 config persistence, validation, session state, OBS URL generation, and a transport gateway that now routes through TS mux/SRT node contracts; Rounds 3-6 add capture-path coordination, video/audio/mux/transport endpoint contracts, and interop diagnostics.
 
 ## File structure snapshot and update targets
@@ -236,14 +239,13 @@ Implement the following in small PR increments; keep variable declarations expli
    - Record per-stage drop counters and expose in diagnostics.
    - Document drop policy priority (freshness-first for real-time path).
 
-4. **Mode matrix for bottleneck isolation**
-   - Add selectable execution modes:
-     - preview only
-     - preview + encoder only
-     - preview + encoder + local sink
-     - preview + encoder + SRT send
-     - reduced profile (720p / 30fps / lower bitrate)
-   - Persist chosen mode with existing Screen 2 configuration storage.
+4. **Stream mode scope (current product direction)**
+   - Keep stream mode support limited to the existing three modes only:
+     - `FullAv`
+     - `VideoOnly`
+     - `AudioOnly`
+   - Continue persisting the selected mode with existing Screen 2 configuration storage.
+   - Do not add preview-only/encoder-only/local-sink/reduced-profile modes in this iteration.
 
 5. **Stage-origin backpressure reporting**
    - Add periodic structured diagnostic snapshots for:
@@ -256,3 +258,27 @@ Implement the following in small PR increments; keep variable declarations expli
 6. **Validation and closeout**
    - Run static/unit validation where environment allows.
    - If Android SDK is unavailable, record environment limitation and include static verification summary.
+
+
+### Suggested PR slicing for the current fix path
+Use this slicing to keep changes reviewable and to avoid coupling docs/scope updates with runtime refactors:
+
+1. **PR 1 — Scope + ownership docs alignment**
+   - Confirm Screen 1 vs Screen 2 responsibility language is explicit and consistent.
+   - Ensure stream mode scope is documented as `FullAv`, `VideoOnly`, `AudioOnly` only.
+
+2. **PR 2 — Metrics model foundation**
+   - Add a dedicated diagnostics/metrics holder for stage timings, queue depths, and drop counters.
+   - Keep this PR non-invasive (data model + wiring hooks only, no behavior changes).
+
+3. **PR 3 — Bounded queue boundaries**
+   - Introduce bounded non-blocking queue handoffs between camera->encoder, encoder->mux, and mux->srt paths.
+   - Add explicit freshness-first drop policy + counters when queues are full.
+
+4. **PR 4 — Backpressure origin reporting to Screen 2**
+   - Add periodic structured snapshots and first-origin threshold reporting.
+   - Surface latest origin summary in existing Screen 2 status output (without adding preview UI).
+
+5. **PR 5 — Validation + docs closeout**
+   - Add/update tests for queue/drop behavior and diagnostics summaries where feasible.
+   - Refresh docs/status notes and clearly report any Android SDK environment limitations encountered during checks.
