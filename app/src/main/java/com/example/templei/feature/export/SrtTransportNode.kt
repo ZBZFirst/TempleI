@@ -12,6 +12,9 @@ object SrtTransportNode {
     private var connected = false
     private var sending = false
     private var runtime: RuntimeBinding = RuntimeBinding.Uninitialized
+    private var packetsSent: Long = 0
+    private var reconnectAttempts: Int = 0
+    private var lastEndpoint: ObsEndpointSpec? = null
 
     /**
      * Probe for runtime availability once and cache the result.
@@ -49,13 +52,17 @@ object SrtTransportNode {
             if (connectResult.isSuccess) {
                 connected = true
                 sending = false
+                reconnectAttempts = 0
+                lastEndpoint = endpoint
                 return Result.success(Unit)
             }
+            reconnectAttempts += 1
             lastError = connectResult.exceptionOrNull() ?: lastError
         }
 
         connected = false
         sending = false
+        lastEndpoint = null
         return Result.failure(lastError)
     }
 
@@ -71,6 +78,9 @@ object SrtTransportNode {
 
         val startResult = resolved.getOrThrow().startSending()
         sending = startResult.isSuccess
+        if (sending) {
+            packetsSent = 0
+        }
         return startResult
     }
 
@@ -88,7 +98,11 @@ object SrtTransportNode {
             return Result.failure(resolved.exceptionOrNull() ?: IllegalStateException("sender unavailable"))
         }
 
-        return resolved.getOrThrow().sendPacket(packet)
+        val sendResult = resolved.getOrThrow().sendPacket(packet)
+        if (sendResult.isSuccess) {
+            packetsSent += 1
+        }
+        return sendResult
     }
 
     fun stopSending() {
@@ -97,6 +111,7 @@ object SrtTransportNode {
         }
         connected = false
         sending = false
+        lastEndpoint = null
     }
 
     fun isConnected(): Boolean = connected
@@ -111,6 +126,7 @@ object SrtTransportNode {
         }
         connected = false
         sending = false
+        lastEndpoint = null
     }
 
     private fun resolveRuntime(): Result<Runtime> {
@@ -137,6 +153,25 @@ object SrtTransportNode {
         }.getOrElse {
             RuntimeBinding.Unavailable("native srt runtime pending (missing $SRT_NATIVE_LIBRARY)")
         }
+    }
+
+
+    data class RuntimeStats(
+        val connected: Boolean,
+        val sending: Boolean,
+        val packetsSent: Long,
+        val reconnectAttempts: Int,
+        val endpoint: ObsEndpointSpec?,
+    )
+
+    fun runtimeStats(): RuntimeStats {
+        return RuntimeStats(
+            connected = connected,
+            sending = sending,
+            packetsSent = packetsSent,
+            reconnectAttempts = reconnectAttempts,
+            endpoint = lastEndpoint,
+        )
     }
 
     internal interface Runtime {

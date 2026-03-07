@@ -32,6 +32,11 @@ class SrtTransportNodeTest {
         assertEquals(1, fakeRuntime.startCalls)
         assertEquals(1, fakeRuntime.packetCalls)
 
+        val stats = SrtTransportNode.runtimeStats()
+        assertTrue(stats.sending)
+        assertEquals(1, stats.packetsSent)
+        assertEquals(endpoint, stats.endpoint)
+
         SrtTransportNode.stopSending()
         assertFalse(SrtTransportNode.isConnected())
         assertEquals(1, fakeRuntime.stopCalls)

@@ -33,7 +33,37 @@ class TsMuxerNodeTest {
         assertEquals(1, fakeRuntime.stopCalls)
     }
 
-    private class FakeRuntime : TsMuxerNode.Runtime {
+    @Test
+    fun `ingest updates runtime stats`() {
+        val fakeRuntime = FakeRuntime(packetToDrain = byteArrayOf(0x47))
+        TsMuxerNode.installRuntimeForTesting(fakeRuntime)
+
+        TsMuxerNode.prepare()
+        TsMuxerNode.start()
+        TsMuxerNode.ingestVideo(
+            VideoEncoderNode.EncodedAccessUnit(
+                data = byteArrayOf(0x00, 0x00, 0x01),
+                presentationTimeUs = 1000,
+                flags = 1,
+            ),
+        )
+        TsMuxerNode.ingestAudio(
+            AudioEncoderNode.EncodedAccessUnit(
+                data = byteArrayOf(0x11, 0x22),
+                presentationTimeUs = 2000,
+                flags = 1,
+            ),
+        )
+
+        val stats = TsMuxerNode.runtimeStats()
+        assertEquals(1, stats.videoAccessUnitsIngested)
+        assertEquals(1, stats.audioAccessUnitsIngested)
+        assertEquals(2, stats.packetsDrained)
+    }
+
+    private class FakeRuntime(
+        private val packetToDrain: ByteArray = ByteArray(0),
+    ) : TsMuxerNode.Runtime {
         var prepareCalls = 0
         var startCalls = 0
         var stopCalls = 0
@@ -61,7 +91,7 @@ class TsMuxerNodeTest {
         }
 
         override fun drainPacket(): ByteArray {
-            return ByteArray(0)
+            return packetToDrain
         }
     }
 }

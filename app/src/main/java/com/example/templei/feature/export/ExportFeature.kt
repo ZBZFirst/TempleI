@@ -179,7 +179,15 @@ object ExportFeature {
             return "${transportAvailabilityMessage()}; waiting for live transport health"
         }
 
-        return "ready for OBS listener ingest"
+        val muxStats = TsMuxerNode.runtimeStats()
+        val srtStats = SrtTransportNode.runtimeStats()
+        return when {
+            sessionState != SessionState.Streaming -> "native runtimes loaded; ready to start"
+            else -> {
+                "streaming health: mux(v=${muxStats.videoAccessUnitsIngested},a=${muxStats.audioAccessUnitsIngested},ts=${muxStats.packetsDrained}) " +
+                    "srt(sent=${srtStats.packetsSent},retries=${srtStats.reconnectAttempts})"
+            }
+        }
     }
 
     fun nextProfile(current: String): String {

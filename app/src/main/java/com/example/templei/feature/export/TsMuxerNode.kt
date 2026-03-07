@@ -12,6 +12,9 @@ object TsMuxerNode {
     private var started = false
     private var runtime: RuntimeBinding = RuntimeBinding.Uninitialized
     private var packetOutputListener: ((ByteArray) -> Unit)? = null
+    private var videoAccessUnitsIngested: Long = 0
+    private var audioAccessUnitsIngested: Long = 0
+    private var packetsDrained: Long = 0
 
     /**
      * Probe for runtime availability once and cache the result.
@@ -36,7 +39,13 @@ object TsMuxerNode {
         if (resolved.isFailure) {
             return Result.failure(resolved.exceptionOrNull() ?: IllegalStateException("native mux path unavailable"))
         }
-        return resolved.getOrThrow().prepare()
+        val result = resolved.getOrThrow().prepare()
+        if (result.isSuccess) {
+            videoAccessUnitsIngested = 0
+            audioAccessUnitsIngested = 0
+            packetsDrained = 0
+        }
+        return result
     }
 
     fun start(): Result<Unit> {
@@ -63,6 +72,9 @@ object TsMuxerNode {
         }
 
         val ingestResult = resolved.getOrThrow().ingestVideo(accessUnit)
+        if (ingestResult.isSuccess) {
+            videoAccessUnitsIngested += 1
+        }
         if (ingestResult.isFailure) {
             return ingestResult
         }
@@ -82,6 +94,9 @@ object TsMuxerNode {
         }
 
         val ingestResult = resolved.getOrThrow().ingestAudio(accessUnit)
+        if (ingestResult.isSuccess) {
+            audioAccessUnitsIngested += 1
+        }
         if (ingestResult.isFailure) {
             return ingestResult
         }
@@ -114,6 +129,7 @@ object TsMuxerNode {
     private fun drainPacketToOutput() {
         val packet = resolveRuntime().getOrNull()?.drainPacket() ?: return
         if (packet.isNotEmpty()) {
+            packetsDrained += 1
             packetOutputListener?.invoke(packet)
         }
     }
@@ -142,6 +158,23 @@ object TsMuxerNode {
         }.getOrElse {
             RuntimeBinding.Unavailable("native mux runtime pending (missing $MUX_NATIVE_LIBRARY)")
         }
+    }
+
+
+    data class RuntimeStats(
+        val started: Boolean,
+        val videoAccessUnitsIngested: Long,
+        val audioAccessUnitsIngested: Long,
+        val packetsDrained: Long,
+    )
+
+    fun runtimeStats(): RuntimeStats {
+        return RuntimeStats(
+            started = started,
+            videoAccessUnitsIngested = videoAccessUnitsIngested,
+            audioAccessUnitsIngested = audioAccessUnitsIngested,
+            packetsDrained = packetsDrained,
+        )
     }
 
     internal interface Runtime {
