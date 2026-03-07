@@ -95,6 +95,7 @@ This plan keeps **Screen 1 camera behavior unchanged** and uses **Screen 2** as 
 
 
 ## Latest completion notes
+- Round 5 mux/transport contract is now wired: `ExportFeature` gateway routes start/stop through `TsMuxerNode` and `SrtTransportNode` using `ObsEndpointSpec` URL contract.
 - Round 4 audio-path contract is now wired: `CaptureCoordinator` configures/starts `AudioEncoderNode` and stops it during session teardown to keep A/V path orchestration paired.
 - Round 3 video-path contract is now wired: `StreamSessionService` calls `CaptureCoordinator`, which checks camera preview readiness and starts/stops video/audio encoder nodes before transport start/stop.
 - Service/session boundary is now implemented with `StreamSessionService` and a binder command channel from `Screen2Activity` for Start/Stop stream actions.

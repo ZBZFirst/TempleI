@@ -7,7 +7,7 @@ import android.content.SharedPreferences
  * Screen 2 export/stream state holder for OBS-over-LAN ingest setup.
  *
  * This module intentionally separates UI wiring from transport internals.
- * TODO: Replace the stub transport with native MPEG-TS mux + SRT sender integration.
+ * TODO: Replace contract nodes with native MPEG-TS mux + SRT sender integration.
  */
 object ExportFeature {
     enum class SessionState {
@@ -49,7 +49,7 @@ object ExportFeature {
     private var lastValidation: String = "Not validated"
     private var lastConnectionTest: String = "Not tested"
 
-    private val transportGateway: StreamTransportGateway = StubTransportGateway
+    private val transportGateway: StreamTransportGateway = DefaultTransportGateway
 
     fun loadConfig(context: Context): ObsStreamConfig {
         val prefs = context.preferences()
@@ -79,8 +79,7 @@ object ExportFeature {
     }
 
     fun buildObsUrl(config: ObsStreamConfig): String {
-        val host = config.host.trim()
-        return "srt://$host:${config.port}?mode=listener"
+        return config.toEndpointSpec().toSrtUrl()
     }
 
     fun validateConfig(config: ObsStreamConfig): ValidationResult {
@@ -125,7 +124,7 @@ object ExportFeature {
         }
 
         sessionState = SessionState.Starting
-        val started = transportGateway.startStream(config)
+        val started = transportGateway.startStream(config.toEndpointSpec())
         return if (started.isSuccess) {
             sessionState = SessionState.Streaming
             lastError = ""
@@ -171,20 +170,44 @@ object ExportFeature {
 
     interface StreamTransportGateway {
         fun isAvailable(): Boolean
-        fun startStream(config: ObsStreamConfig): Result<Unit>
+        fun startStream(endpoint: ObsEndpointSpec): Result<Unit>
         fun stopStream(): Result<Unit>
     }
 
-    private object StubTransportGateway : StreamTransportGateway {
-        override fun isAvailable(): Boolean = false
-
-        override fun startStream(config: ObsStreamConfig): Result<Unit> {
-            return Result.failure(
-                IllegalStateException("MPEG-TS mux + SRT sender unavailable in this build"),
-            )
+    private object DefaultTransportGateway : StreamTransportGateway {
+        override fun isAvailable(): Boolean {
+            return TsMuxerNode.isAvailable() && SrtTransportNode.isAvailable()
         }
 
-        override fun stopStream(): Result<Unit> = Result.success(Unit)
+        override fun startStream(endpoint: ObsEndpointSpec): Result<Unit> {
+            val muxPrepared = TsMuxerNode.prepare()
+            if (muxPrepared.isFailure) {
+                return Result.failure(IllegalStateException("native mux path unavailable"))
+            }
+
+            val connected = SrtTransportNode.connect(endpoint)
+            if (connected.isFailure) {
+                return Result.failure(IllegalStateException("sender unavailable"))
+            }
+
+            val muxStarted = TsMuxerNode.start()
+            if (muxStarted.isFailure) {
+                return Result.failure(IllegalStateException("native mux path unavailable"))
+            }
+
+            val sendingStarted = SrtTransportNode.startSending()
+            if (sendingStarted.isFailure) {
+                return Result.failure(IllegalStateException("sender unavailable"))
+            }
+
+            return Result.success(Unit)
+        }
+
+        override fun stopStream(): Result<Unit> {
+            SrtTransportNode.stopSending()
+            TsMuxerNode.stop()
+            return Result.success(Unit)
+        }
     }
 
     private fun Context.preferences(): SharedPreferences {
