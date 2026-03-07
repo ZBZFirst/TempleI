@@ -137,6 +137,53 @@ object CameraFeature {
         onStarted()
     }
 
+
+    fun ensureCapturePipeline(context: Context, onUnavailable: () -> Unit = {}): Boolean {
+        val provider = cameraProvider ?: ProcessCameraProvider.getInstance(context).get().also {
+            cameraProvider = it
+        }
+
+        if (!provider.hasCamera(selectedLensOption.toSelector())) {
+            isBound = false
+            onUnavailable()
+            return false
+        }
+
+        if (isBound) {
+            return true
+        }
+
+        val imageCaptureUseCase = ImageCapture.Builder().build()
+        val recorder = Recorder.Builder().setQualitySelector(QualitySelector.from(Quality.HD)).build()
+        val videoCaptureUseCase = VideoCapture.withOutput(recorder)
+        val imageAnalysisUseCase = ImageAnalysis.Builder()
+            // Keep analyzer frames aligned with current encoder profile expectation (1280x720).
+            .setTargetResolution(Size(1280, 720))
+            .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+            .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888)
+            .build().also { analysis ->
+                analysis.setAnalyzer(analysisExecutor) { imageProxy ->
+                    handleAnalysisFrame(imageProxy)
+                }
+            }
+
+        provider.unbindAll()
+        provider.bindToLifecycle(
+            CameraSessionLifecycleOwner,
+            selectedLensOption.toSelector(),
+            imageCaptureUseCase,
+            videoCaptureUseCase,
+            imageAnalysisUseCase,
+        )
+
+        previewUseCase = null
+        imageCapture = imageCaptureUseCase
+        videoCapture = videoCaptureUseCase
+        imageAnalysis = imageAnalysisUseCase
+        isBound = true
+        return true
+    }
+
     fun stopPreview() {
         stopRecording()
         cameraProvider?.unbindAll()

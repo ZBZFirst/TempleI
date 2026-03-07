@@ -242,7 +242,7 @@ object ExportFeature {
             host = host.trim(),
             port = port,
             latencyMs = 120,
-            mode = "listener",
+            mode = "caller",
         )
     }
 

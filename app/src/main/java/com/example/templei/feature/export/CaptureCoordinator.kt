@@ -1,5 +1,6 @@
 package com.example.templei.feature.export
 
+import android.content.Context
 import android.util.Log
 import com.example.templei.feature.camera.CameraFeature
 
@@ -40,14 +41,17 @@ object CaptureCoordinator {
     private var cameraRelayThread: Thread? = null
     private var encoderRelayThread: Thread? = null
 
-    fun startCapturePathSession(config: ExportFeature.ObsStreamConfig): StartResult {
+    fun startCapturePathSession(context: Context, config: ExportFeature.ObsStreamConfig): StartResult {
         val streamMode: StreamPathMode = config.streamMode
         if (config.host.isBlank()) {
             return StartResult(isReady = false, error = "host missing")
         }
 
-        if (!CameraFeature.isPreviewRunning()) {
-            return StartResult(isReady = false, error = "camera preview not running")
+        val captureReady = CameraFeature.ensureCapturePipeline(context) {
+            Log.e(TAG, "camera capture pipeline unavailable on selected lens")
+        }
+        if (!captureReady) {
+            return StartResult(isReady = false, error = "camera capture pipeline not running")
         }
 
         startRelayWorkers()
