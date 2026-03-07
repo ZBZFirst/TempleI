@@ -21,8 +21,16 @@ object VideoEncoderNode {
         val bitrate: Int = 2_500_000,
     )
 
+    data class EncodedAccessUnit(
+        val data: ByteArray,
+        val presentationTimeUs: Long,
+        val flags: Int,
+        val trackIndex: Int = 0,
+    )
+
     private var nodeState: NodeState = NodeState.Idle
     private var lastError: String = ""
+    private var outputListener: ((EncodedAccessUnit) -> Unit)? = null
 
     fun configure(config: EncoderConfig): Result<Unit> {
         if (config.width <= 0 || config.height <= 0 || config.fps <= 0 || config.bitrate <= 0) {
@@ -36,6 +44,10 @@ object VideoEncoderNode {
         return Result.success(Unit)
     }
 
+    fun setOutputListener(listener: ((EncodedAccessUnit) -> Unit)?) {
+        outputListener = listener
+    }
+
     fun start(): Result<Unit> {
         if (nodeState != NodeState.Configured) {
             nodeState = NodeState.Faulted
@@ -44,6 +56,7 @@ object VideoEncoderNode {
         }
 
         nodeState = NodeState.Running
+        emitCodecBootstrapSample()
         return Result.success(Unit)
     }
 
@@ -55,4 +68,13 @@ object VideoEncoderNode {
     fun state(): NodeState = nodeState
 
     fun error(): String = lastError
+
+    private fun emitCodecBootstrapSample() {
+        val sample = EncodedAccessUnit(
+            data = byteArrayOf(0x00, 0x00, 0x00, 0x01, 0x67.toByte(), 0x42.toByte(), 0x00, 0x1f),
+            presentationTimeUs = System.nanoTime() / 1_000,
+            flags = 1,
+        )
+        outputListener?.invoke(sample)
+    }
 }
