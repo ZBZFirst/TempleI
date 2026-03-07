@@ -37,6 +37,7 @@ To build and install arm64 sender/runtime libraries from source:
 
 ```bash
 export ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/<version>
+# Requires: git, cmake, make on PATH
 ./gradlew :app:buildSrtArm64
 ./gradlew :app:buildFfmpegArm64
 ```

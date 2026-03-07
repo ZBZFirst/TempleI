@@ -28,6 +28,14 @@ if [[ -z "${ANDROID_NDK_HOME:-}" ]]; then
   exit 1
 fi
 
+for tool in git cmake make; do
+  if ! command -v "$tool" >/dev/null 2>&1; then
+    echo "Missing required build tool: $tool"
+    echo "Install '$tool' and re-run ./gradlew :app:buildFfmpegArm64"
+    exit 1
+  fi
+done
+
 if [[ ! -f "$APP_DIR/src/main/jniLibs/$ABI/libsrt.so" ]]; then
   echo "Missing libsrt.so for $ABI at app/src/main/jniLibs/$ABI/libsrt.so"
   echo "Run ./gradlew :app:buildSrtArm64 first so FFmpeg can link against libsrt."
@@ -49,6 +57,8 @@ if [[ ! -x "$CC" ]]; then
   echo "Unable to find Android clang compiler at $CC"
   exit 1
 fi
+
+JOBS="$(command -v nproc >/dev/null 2>&1 && nproc || getconf _NPROCESSORS_ONLN || echo 1)"
 
 mkdir -p "$FFMPEG_BUILD_DIR" "$JNI_OUT_DIR"
 pushd "$FFMPEG_SRC_DIR" >/dev/null
@@ -78,7 +88,7 @@ export PKG_CONFIG_PATH
   --extra-ldflags="-L$APP_DIR/src/main/jniLibs/$ABI" \
   --extra-libs="-lsrt"
 
-make -j"$(nproc)"
+make -j"$JOBS"
 make install
 popd >/dev/null
 
