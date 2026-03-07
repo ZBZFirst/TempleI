@@ -29,11 +29,17 @@ class StreamSessionService : Service() {
         fun startSession(config: ExportFeature.ObsStreamConfig): ExportFeature.StreamResult {
             val captureReady = CaptureCoordinator.startCapturePathSession(config)
             if (!captureReady.isReady) {
-                return ExportFeature.markFault(captureReady.error.orEmpty())
+                return ExportFeature.markFault("capture path not ready: ${captureReady.error.orEmpty()}")
             }
 
             ensureForegroundNotification()
-            return ExportFeature.startStream(config)
+            val streamResult = ExportFeature.startStream(config)
+            if (streamResult.state != ExportFeature.SessionState.Streaming) {
+                // Keep capture/session teardown symmetric when transport start fails.
+                CaptureCoordinator.stopCapturePathSession()
+                stopForegroundSession()
+            }
+            return streamResult
         }
 
         fun stopSession(): ExportFeature.StreamResult {
