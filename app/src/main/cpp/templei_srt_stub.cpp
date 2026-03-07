@@ -115,7 +115,7 @@ bool loadApi() {
     }
 
     setRuntimeInfo(summary.str());
-    setError("libsrt shared library not found");
+    setError("libsrt shared library not found (build FFmpeg with --enable-libsrt and package libsrt.so)");
     return false;
 }
 
