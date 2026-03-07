@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+trap 'exit_code=$?; echo "FFmpeg build script failed (exit ${exit_code}) at line ${LINENO}: ${BASH_COMMAND}"; exit ${exit_code}' ERR
+
 ABI="${1:-arm64-v8a}"
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 APP_DIR="$ROOT_DIR/app"
@@ -28,10 +30,11 @@ if [[ -z "${ANDROID_NDK_HOME:-}" ]]; then
   exit 1
 fi
 
-for tool in git cmake make; do
+for tool in git cmake make pkg-config; do
   if ! command -v "$tool" >/dev/null 2>&1; then
     echo "Missing required build tool: $tool"
     echo "Install '$tool' and re-run ./gradlew :app:buildFfmpegArm64"
+    echo "Tip (Windows): install Git Bash + MSYS2 and add make/pkg-config to PATH before running Gradle."
     exit 1
   fi
 done
@@ -49,9 +52,48 @@ if [[ ! -d "$FFMPEG_SRC_DIR/.git" ]]; then
 fi
 
 API_LEVEL="24"
-TOOLCHAIN="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64"
-CC="$TOOLCHAIN/bin/${ANDROID_TARGET}${API_LEVEL}-clang"
-CXX="$TOOLCHAIN/bin/${ANDROID_TARGET}${API_LEVEL}-clang++"
+
+HOST_TAG=""
+case "$(uname -s)" in
+  Linux*) HOST_TAG="linux-x86_64" ;;
+  Darwin*) HOST_TAG="darwin-x86_64" ;;
+  MINGW*|MSYS*|CYGWIN*) HOST_TAG="windows-x86_64" ;;
+  *)
+    echo "Unsupported host OS: $(uname -s)"
+    echo "Supported hosts: Linux, macOS, Windows (Git Bash/MSYS2)"
+    exit 1
+    ;;
+esac
+
+TOOLCHAIN="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/$HOST_TAG"
+if [[ ! -d "$TOOLCHAIN" ]]; then
+  echo "Unable to find Android NDK toolchain prebuilt directory at: $TOOLCHAIN"
+  echo "Check ANDROID_NDK_HOME and host OS compatibility."
+  exit 1
+fi
+
+CC_BASE="$TOOLCHAIN/bin/${ANDROID_TARGET}${API_LEVEL}-clang"
+CXX_BASE="$TOOLCHAIN/bin/${ANDROID_TARGET}${API_LEVEL}-clang++"
+
+if [[ -x "$CC_BASE" ]]; then
+  CC="$CC_BASE"
+elif [[ -x "${CC_BASE}.cmd" ]]; then
+  CC="${CC_BASE}.cmd"
+elif [[ -x "${CC_BASE}.exe" ]]; then
+  CC="${CC_BASE}.exe"
+else
+  CC="$CC_BASE"
+fi
+
+if [[ -x "$CXX_BASE" ]]; then
+  CXX="$CXX_BASE"
+elif [[ -x "${CXX_BASE}.cmd" ]]; then
+  CXX="${CXX_BASE}.cmd"
+elif [[ -x "${CXX_BASE}.exe" ]]; then
+  CXX="${CXX_BASE}.exe"
+else
+  CXX="$CXX_BASE"
+fi
 
 if [[ ! -x "$CC" ]]; then
   echo "Unable to find Android clang compiler at $CC"

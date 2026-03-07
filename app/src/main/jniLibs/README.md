@@ -3,13 +3,22 @@
 Screen 2 transport now targets an FFmpeg-backed runtime path.
 Legacy TS mux/SRT node fallback has been removed.
 
-Place prebuilt native runtime libraries in ABI-specific folders for runtime probing:
+Place runtime libraries in ABI-specific folders for runtime probing:
 
 - `app/src/main/jniLibs/arm64-v8a/libsrt.so`
 - `app/src/main/jniLibs/arm64-v8a/libavcodec.so`
 - `app/src/main/jniLibs/arm64-v8a/libavformat.so`
 - `app/src/main/jniLibs/arm64-v8a/libavutil.so`
 - `app/src/main/jniLibs/arm64-v8a/libswresample.so`
+
+For easier local setup, you can also drop prebuilt FFmpeg artifacts into:
+
+- `app/prebuilt-libs/ffmpeg/arm64-v8a/libavcodec.so`
+- `app/prebuilt-libs/ffmpeg/arm64-v8a/libavformat.so`
+- `app/prebuilt-libs/ffmpeg/arm64-v8a/libavutil.so`
+- `app/prebuilt-libs/ffmpeg/arm64-v8a/libswresample.so`
+
+Gradle task `installPrebuiltFfmpegArm64` copies any present prebuilt files into `app/src/main/jniLibs/arm64-v8a/` before fallback source builds.
 
 Optional additional ABI folders can be added as needed for emulator/dev targets.
 

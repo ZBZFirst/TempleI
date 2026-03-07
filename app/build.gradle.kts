@@ -1,4 +1,5 @@
 import java.io.File
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     alias(libs.plugins.android.application)
@@ -44,9 +45,6 @@ android {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
     }
-    kotlinOptions {
-        jvmTarget = "11"
-    }
     buildFeatures {
         compose = true
     }
@@ -63,6 +61,12 @@ android {
             // Keep native libs directly loadable for runtime dlopen checks.
             useLegacyPackaging = true
         }
+    }
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget.set(JvmTarget.JVM_11)
     }
 }
 
@@ -141,6 +145,28 @@ val ffmpegRequiredLibs = listOf(
     "libswresample.so",
 )
 
+val ffmpegPrebuiltDirArm64 = layout.projectDirectory.dir("prebuilt-libs/ffmpeg/arm64-v8a")
+
+val installPrebuiltFfmpegArm64 by tasks.registering {
+    group = "native dependencies"
+    description = "Install prebuilt FFmpeg runtime libs for arm64-v8a when available"
+    doLast {
+        val prebuiltDir = ffmpegPrebuiltDirArm64.asFile
+        if (!prebuiltDir.exists()) {
+            logger.lifecycle("No prebuilt FFmpeg directory found at ${prebuiltDir}; falling back to source build when needed.")
+            return@doLast
+        }
+
+        ffmpegRequiredLibs.forEach { libName ->
+            val sourceFile = ffmpegPrebuiltDirArm64.file(libName).asFile
+            if (sourceFile.exists()) {
+                sourceFile.copyTo(ffmpegOutputDirArm64.file(libName).asFile, overwrite = true)
+                logger.lifecycle("Installed prebuilt FFmpeg library: ${sourceFile.name}")
+            }
+        }
+    }
+}
+
 val buildFfmpegArm64 by tasks.registering(Exec::class) {
     group = "native dependencies"
     description = "Build FFmpeg runtime libs for arm64-v8a and copy them into app/src/main/jniLibs/arm64-v8a"
@@ -157,22 +183,35 @@ val buildFfmpegArm64 by tasks.registering(Exec::class) {
 val installFfmpegArm64 by tasks.registering {
     group = "native dependencies"
     description = "Install FFmpeg runtime libs for arm64-v8a when missing"
+    dependsOn(installPrebuiltFfmpegArm64)
     dependsOn(buildFfmpegArm64)
     doLast {
-        logger.lifecycle("FFmpeg arm64 runtime check completed in ${ffmpegOutputDirArm64.asFile}")
+        val missing = ffmpegRequiredLibs.filterNot { ffmpegOutputDirArm64.file(it).asFile.exists() }
+        if (missing.isNotEmpty()) {
+            throw GradleException(
+                "FFmpeg install check still missing arm64-v8a runtime libs: ${missing.joinToString()}. " +
+                    "Preferred path: place prebuilt FFmpeg runtime libraries under app/prebuilt-libs/ffmpeg/arm64-v8a/. " +
+                    "Fallback path: ensure ANDROID_NDK_HOME is set and required host tools are installed (git, cmake, make, pkg-config), " +
+                    "then run './gradlew :app:buildFfmpegArm64 --stacktrace --info'. " +
+                    "Libraries are packaged from app/src/main/jniLibs/arm64-v8a/."
+            )
+        }
+        logger.lifecycle("FFmpeg arm64 runtime libs are ready in ${ffmpegOutputDirArm64.asFile}")
     }
 }
 
 val verifyFfmpegDependency by tasks.registering {
     group = "verification"
     description = "Verify FFmpeg runtime libs are packaged for the enabled ABI"
+    dependsOn(installFfmpegArm64)
     doLast {
         val missing = ffmpegRequiredLibs.filterNot { ffmpegOutputDirArm64.file(it).asFile.exists() }
         if (missing.isNotEmpty()) {
             throw GradleException(
-                "Missing FFmpeg runtime dependencies for arm64-v8a: ${missing.joinToString()}. " +
-                    "Run './gradlew :app:buildFfmpegArm64' (requires ANDROID_NDK_HOME + network) " +
-                    "or provide prebuilt FFmpeg runtime libraries under app/src/main/jniLibs/arm64-v8a/."
+                "Missing FFmpeg runtime dependencies for arm64-v8a after install attempt: ${missing.joinToString()}. " +
+                    "Preferred path: copy prebuilt FFmpeg runtime libraries into app/prebuilt-libs/ffmpeg/arm64-v8a/ " +
+                    "and rerun Gradle. Fallback path: run './gradlew :app:buildFfmpegArm64 --stacktrace --info' " +
+                    "(requires ANDROID_NDK_HOME + network)."
             )
         }
     }
