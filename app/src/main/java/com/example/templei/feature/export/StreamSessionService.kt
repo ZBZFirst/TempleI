@@ -29,7 +29,7 @@ class StreamSessionService : Service() {
         fun startSession(config: ExportFeature.ObsStreamConfig): ExportFeature.StreamResult {
             val captureReady = CaptureCoordinator.startCapturePathSession(config)
             if (!captureReady.isReady) {
-                return ExportFeature.markFault(captureReady.error.orEmpty())
+                return ExportFeature.markFault("capture path not ready: ${captureReady.error.orEmpty()}")
             }
 
             ensureForegroundNotification()

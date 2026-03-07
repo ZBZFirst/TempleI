@@ -114,12 +114,14 @@ object ExportFeature {
     fun startStream(config: ObsStreamConfig): StreamResult {
         val validation = validateConfig(config)
         if (!validation.isValid) {
-            return StreamResult(state = SessionState.Faulted, error = validation.message)
+            sessionState = SessionState.Faulted
+            lastError = "start validation failed: ${validation.message}"
+            return StreamResult(state = sessionState, error = lastError)
         }
 
         if (!transportGateway.isAvailable()) {
             sessionState = SessionState.Faulted
-            lastError = transportAvailabilityMessage()
+            lastError = "start availability failed: ${transportAvailabilityMessage()}"
             return StreamResult(state = sessionState, error = lastError)
         }
 
@@ -131,7 +133,7 @@ object ExportFeature {
             StreamResult(state = sessionState)
         } else {
             sessionState = SessionState.Faulted
-            lastError = started.exceptionOrNull()?.message.orEmpty()
+            lastError = "start transport failed: ${started.exceptionOrNull()?.message.orEmpty()}"
             StreamResult(state = sessionState, error = lastError)
         }
     }
@@ -224,17 +226,20 @@ object ExportFeature {
         override fun startStream(endpoint: ObsEndpointSpec): Result<Unit> {
             val muxPrepared = TsMuxerNode.prepare()
             if (muxPrepared.isFailure) {
-                return Result.failure(IllegalStateException(TsMuxerNode.availabilityMessage()))
+                val reason = muxPrepared.exceptionOrNull()?.message ?: TsMuxerNode.availabilityMessage()
+                return Result.failure(IllegalStateException("mux prepare failed: $reason"))
             }
 
             val connected = SrtTransportNode.connect(endpoint)
             if (connected.isFailure) {
-                return Result.failure(IllegalStateException(SrtTransportNode.availabilityMessage()))
+                val reason = connected.exceptionOrNull()?.message ?: SrtTransportNode.availabilityMessage()
+                return Result.failure(IllegalStateException("srt connect failed: $reason"))
             }
 
             val sendingStarted = SrtTransportNode.startSending()
             if (sendingStarted.isFailure) {
-                return Result.failure(IllegalStateException(SrtTransportNode.availabilityMessage()))
+                val reason = sendingStarted.exceptionOrNull()?.message ?: SrtTransportNode.availabilityMessage()
+                return Result.failure(IllegalStateException("srt send-start failed: $reason"))
             }
 
             TsMuxerNode.setPacketOutputListener { packet ->
@@ -243,7 +248,8 @@ object ExportFeature {
 
             val muxStarted = TsMuxerNode.start()
             if (muxStarted.isFailure) {
-                return Result.failure(IllegalStateException(TsMuxerNode.availabilityMessage()))
+                val reason = muxStarted.exceptionOrNull()?.message ?: TsMuxerNode.availabilityMessage()
+                return Result.failure(IllegalStateException("mux start failed: $reason"))
             }
 
             return Result.success(Unit)
