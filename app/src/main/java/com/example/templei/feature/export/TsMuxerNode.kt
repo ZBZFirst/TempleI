@@ -1,5 +1,7 @@
 package com.example.templei.feature.export
 
+import android.util.Log
+
 /**
  * MPEG-TS mux node contract for Screen 2 stream path.
  *
@@ -7,6 +9,7 @@ package com.example.templei.feature.export
  * "runtime pending" from a loaded mux integration.
  */
 object TsMuxerNode {
+    private const val TAG = "TempleI-TsMux"
     private const val MUX_NATIVE_LIBRARY = "templei_mux"
 
     private var started = false
@@ -15,6 +18,7 @@ object TsMuxerNode {
     private var videoAccessUnitsIngested: Long = 0
     private var audioAccessUnitsIngested: Long = 0
     private var packetsDrained: Long = 0
+    private var bytesHandedToSrt: Long = 0
     private val pendingVideoAccessUnits = ArrayDeque<VideoEncoderNode.EncodedAccessUnit>()
     private val pendingAudioAccessUnits = ArrayDeque<AudioEncoderNode.EncodedAccessUnit>()
 
@@ -46,6 +50,7 @@ object TsMuxerNode {
             videoAccessUnitsIngested = 0
             audioAccessUnitsIngested = 0
             packetsDrained = 0
+            bytesHandedToSrt = 0
             // Preserve pending access units so capture bootstrap emitted before prepare/start still flushes.
         }
         return result
@@ -123,6 +128,16 @@ object TsMuxerNode {
         packetOutputListener = null
     }
 
+    fun resetRuntimeState() {
+        stop()
+        runtime = RuntimeBinding.Uninitialized
+        videoAccessUnitsIngested = 0
+        audioAccessUnitsIngested = 0
+        packetsDrained = 0
+        bytesHandedToSrt = 0
+        Log.i(TAG, "runtime reset")
+    }
+
     fun isStarted(): Boolean = started
 
     /**
@@ -169,6 +184,7 @@ object TsMuxerNode {
                 break
             }
             packetsDrained += 1
+            bytesHandedToSrt += packet.size
             packetOutputListener?.invoke(packet)
         }
     }
@@ -205,6 +221,7 @@ object TsMuxerNode {
         val videoAccessUnitsIngested: Long,
         val audioAccessUnitsIngested: Long,
         val packetsDrained: Long,
+        val bytesHandedToSrt: Long,
     )
 
     fun runtimeStats(): RuntimeStats {
@@ -213,6 +230,7 @@ object TsMuxerNode {
             videoAccessUnitsIngested = videoAccessUnitsIngested,
             audioAccessUnitsIngested = audioAccessUnitsIngested,
             packetsDrained = packetsDrained,
+            bytesHandedToSrt = bytesHandedToSrt,
         )
     }
 

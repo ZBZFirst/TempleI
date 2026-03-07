@@ -6,6 +6,7 @@ import android.media.MediaCodec
 import android.media.MediaCodecInfo
 import android.media.MediaFormat
 import android.media.MediaRecorder
+import android.util.Log
 import kotlin.concurrent.thread
 
 /**
@@ -14,6 +15,7 @@ import kotlin.concurrent.thread
  * This node encodes microphone PCM to AAC-LC access units.
  */
 object AudioEncoderNode {
+    private const val TAG = "TempleI-AudioEnc"
     enum class NodeState {
         Idle,
         Configured,
@@ -46,6 +48,9 @@ object AudioEncoderNode {
     private var captureThread: Thread? = null
     @Volatile
     private var captureLoopActive = false
+    private var framesEncoded: Long = 0
+    private var firstOutputLogs = 0
+    private var firstAdtsLogs = 0
 
     private data class AudioConfig(
         val profile: Int = MediaCodecInfo.CodecProfileLevel.AACObjectLC,
@@ -141,6 +146,9 @@ object AudioEncoderNode {
         runCatching { codec?.release() }
         codec = null
         audioConfig = AudioConfig()
+        framesEncoded = 0
+        firstOutputLogs = 0
+        firstAdtsLogs = 0
 
         nodeState = NodeState.Idle
         lastError = ""
@@ -196,6 +204,14 @@ object AudioEncoderNode {
 
                             if ((bufferInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG) == 0) {
                                 val adtsPayload = addAdtsHeader(payload, audioConfig)
+                                if (firstOutputLogs < 5) {
+                                    Log.i(
+                                        TAG,
+                                        "aac-buffer[${firstOutputLogs + 1}] size=${bufferInfo.size} flags=${bufferInfo.flags} " +
+                                            "codecConfig=false first16=${toHex(payload, 16)}",
+                                    )
+                                    firstOutputLogs += 1
+                                }
                                 outputListener?.invoke(
                                     EncodedAccessUnit(
                                         data = adtsPayload,
@@ -203,6 +219,14 @@ object AudioEncoderNode {
                                         flags = bufferInfo.flags,
                                     ),
                                 )
+                                framesEncoded += 1
+                            } else if (firstOutputLogs < 5) {
+                                Log.i(
+                                    TAG,
+                                    "aac-buffer[${firstOutputLogs + 1}] size=${bufferInfo.size} flags=${bufferInfo.flags} " +
+                                        "codecConfig=true first16=${toHex(payload, 16)}",
+                                )
+                                firstOutputLogs += 1
                             }
                         }
                         activeCodec.releaseOutputBuffer(outputIndex, false)
@@ -228,7 +252,12 @@ object AudioEncoderNode {
             profile = if (objectType <= 0) MediaCodecInfo.CodecProfileLevel.AACObjectLC else objectType,
             sampleRateIndex = sampleRateIndex,
             channelConfig = channelConfig,
-        )
+        ).also {
+            Log.i(
+                TAG,
+                "aac-csd profile=${it.profile} sampleRateIndex=${it.sampleRateIndex} channelConfig=${it.channelConfig}",
+            )
+        }
     }
 
     private fun addAdtsHeader(payload: ByteArray, config: AudioConfig): ByteArray {
@@ -246,6 +275,27 @@ object AudioEncoderNode {
         header[5] = ((((frameLength and 0x07) shl 5) or 0x1F)).toByte()
         header[6] = 0xFC.toByte()
 
+        if (firstAdtsLogs < 5) {
+            Log.i(
+                TAG,
+                "adts[${firstAdtsLogs + 1}] profile=${profile + 1} freqIdx=$freqIdx chanCfg=$chanCfg frameLen=$frameLength " +
+                    "header=${toHex(header, 7)} payload16=${toHex(payload, 16)}",
+            )
+            firstAdtsLogs += 1
+        }
+
         return header + payload
+    }
+
+    data class RuntimeStats(
+        val framesEncoded: Long,
+    )
+
+    fun runtimeStats(): RuntimeStats = RuntimeStats(framesEncoded = framesEncoded)
+
+    private fun toHex(bytes: ByteArray, maxLen: Int): String {
+        val end = bytes.size.coerceAtMost(maxLen)
+        if (end == 0) return ""
+        return bytes.copyOf(end).joinToString(separator = "") { "%02X".format(it) }
     }
 }

@@ -15,6 +15,7 @@ object SrtTransportNode {
     private var runtime: RuntimeBinding = RuntimeBinding.Uninitialized
     private var packetsSent: Long = 0
     private var bytesSent: Long = 0
+    private var bytesHandedToSrt: Long = 0
     private var reconnectAttempts: Int = 0
     private var lastEndpoint: ObsEndpointSpec? = null
     private var socketState: String = "UNINITIALIZED"
@@ -63,6 +64,7 @@ object SrtTransportNode {
                 lastEndpoint = endpoint
                 packetsSent = 0
                 bytesSent = 0
+                bytesHandedToSrt = 0
                 lastSendResult = "not attempted"
                 refreshNativeSnapshot()
                 return Result.success(Unit)
@@ -93,6 +95,7 @@ object SrtTransportNode {
         if (sending) {
             packetsSent = 0
             bytesSent = 0
+            bytesHandedToSrt = 0
             lastSendResult = "not attempted"
         }
         refreshNativeSnapshot()
@@ -114,6 +117,7 @@ object SrtTransportNode {
         }
 
         val sendResult = resolved.getOrThrow().sendPacket(packet)
+        bytesHandedToSrt += packet.size
         if (sendResult.isSuccess) {
             packetsSent += 1
             bytesSent += packet.size
@@ -137,6 +141,16 @@ object SrtTransportNode {
         refreshNativeSnapshot()
     }
 
+    fun resetRuntimeState() {
+        stopSending()
+        runtime = RuntimeBinding.Uninitialized
+        packetsSent = 0
+        bytesSent = 0
+        bytesHandedToSrt = 0
+        reconnectAttempts = 0
+        lastSendResult = "reset"
+    }
+
     fun isConnected(): Boolean = connected
 
     /**
@@ -152,6 +166,7 @@ object SrtTransportNode {
         lastEndpoint = null
         packetsSent = 0
         bytesSent = 0
+        bytesHandedToSrt = 0
         socketState = "UNINITIALIZED"
         nativeStatsSnapshot = ""
         lastSendResult = "not attempted"
@@ -199,6 +214,7 @@ object SrtTransportNode {
         val sending: Boolean,
         val packetsSent: Long,
         val bytesSent: Long,
+        val bytesHandedToSrt: Long,
         val reconnectAttempts: Int,
         val endpoint: ObsEndpointSpec?,
         val socketState: String,
@@ -213,6 +229,7 @@ object SrtTransportNode {
             sending = sending,
             packetsSent = packetsSent,
             bytesSent = bytesSent,
+            bytesHandedToSrt = bytesHandedToSrt,
             reconnectAttempts = reconnectAttempts,
             endpoint = lastEndpoint,
             socketState = socketState,
