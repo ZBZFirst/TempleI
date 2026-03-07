@@ -26,6 +26,19 @@ This plan keeps **Screen 1 camera behavior unchanged** and uses **Screen 2** as 
   - TransportFailure
   - ObsUnreachable
 
+
+## Current Screen 2 wiring status
+- Screen 2 buttons are now mapped to concrete OBS ingest workflow actions:
+  - edit host/IP, edit port, validate/test, reset preset, show OBS input string, toggle profile, start, stop.
+- Screen 2 persists host/port/profile locally via SharedPreferences through `ExportFeature`.
+- Screen 2 now displays required outputs:
+  - OBS setup summary (Media Source + Local File Off + Input + Input Format)
+  - session state
+  - validation result
+  - last connection test result
+  - last error text
+- Start/Stop are wired to a minimal transport boundary (`StreamTransportGateway`) with a stub implementation that clearly reports missing native MPEG-TS mux + SRT sender integration.
+
 ## Screen 2 implementation phases
 
 ### Phase 1 — UI conversation + contract placeholders

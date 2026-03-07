@@ -16,19 +16,44 @@
     <string name="screen3TitleText">Screen 3</string>
     <string name="screen4TitleText">Screen 4</string>
 
-    <string name="screen2_title_text">Screen 2 · OBS Stream Plan</string>
-    <string name="obs_plan_pipeline_title">Pipeline Conversation</string>
-    <string name="obs_plan_pipeline_summary">Android camera + mic → H.264/AAC → MPEG-TS → SRT over LAN → OBS Media Source.</string>
-    <string name="obs_plan_define_endpoint">OBS Endpoint</string>
-    <string name="obs_plan_define_transport">SRT Transport</string>
-    <string name="obs_plan_define_muxing">TS Mux Rules</string>
-    <string name="obs_plan_define_recovery">Reconnect Policy</string>
-    <string name="obs_plan_state_title">State + Failure Design</string>
-    <string name="obs_plan_state_summary">Keep stream state and failure domains separate so capture, encode, mux, and transport can recover independently.</string>
-    <string name="obs_plan_setup_state_machine">Stream States</string>
-    <string name="obs_plan_setup_failures">Failure Domains</string>
-    <string name="obs_plan_setup_contracts">Behavior Contract</string>
-    <string name="obs_plan_setup_file_map">Kotlin File Map</string>
+    <string name="screen2_title_text">Screen 2 · OBS SRT Ingest</string>
+    <string name="obs_section_a_title">Section A · Endpoint Setup</string>
+    <string name="obs_section_a_summary">Set OBS host/port, validate config, and manage preset values.</string>
+    <string name="obs_button_edit_host">Edit OBS Host/IP</string>
+    <string name="obs_button_edit_port">Edit OBS Port</string>
+    <string name="obs_button_validate_test">Validate/Test Endpoint</string>
+    <string name="obs_button_preset_reset">Load/Reset Preset</string>
+
+    <string name="obs_section_b_title">Section B · Stream Controls</string>
+    <string name="obs_section_b_summary">Generate OBS Media Source input, set stream profile, and run Start/Stop controls.</string>
+    <string name="obs_button_show_input">Show OBS Input String</string>
+    <string name="obs_button_toggle_profile">Toggle Stream Profile</string>
+    <string name="obs_button_start_stream">Start Stream</string>
+    <string name="obs_button_stop_stream">Stop Stream</string>
+
+    <string name="obs_setup_summary_title">OBS Setup Summary</string>
+    <string name="obs_setup_summary_placeholder">Media Source instructions will appear here.</string>
+    <string name="obs_session_state_placeholder">Session State: idle</string>
+    <string name="obs_validation_placeholder">Validation: not run</string>
+    <string name="obs_connection_placeholder">Last Test: not run</string>
+    <string name="obs_last_error_placeholder">Last Error: none</string>
+
+    <string name="obs_setup_summary_value">Media Source\nLocal File = Off\nInput = %1$s\nInput Format = mpegts\nTransport = srt\nProfile = %2$s</string>
+    <string name="obs_session_state_value">Session State: %1$s</string>
+    <string name="obs_validation_value">Validation: %1$s</string>
+    <string name="obs_connection_value">Last Test: %1$s</string>
+    <string name="obs_last_error_value">Last Error: %1$s</string>
+    <string name="obs_no_error">none</string>
+
+    <string name="obs_edit_host_title">Edit OBS Host/IP</string>
+    <string name="obs_edit_port_title">Edit OBS Port</string>
+    <string name="obs_host_hint">192.168.1.10</string>
+    <string name="obs_port_hint">9000</string>
+    <string name="obs_save_action">Save</string>
+    <string name="obs_cancel_action">Cancel</string>
+    <string name="obs_ok_action">OK</string>
+    <string name="obs_input_dialog_title">OBS Media Source Input</string>
+    <string name="obs_input_dialog_message">Use this in OBS Media Source:\n\nLocal File: Off\nInput: %1$s\nInput Format: mpegts</string>
 
     <string name="camera_select_button">Select Camera</string>
     <string name="camera_start_button">Start Camera</string>
@@ -52,5 +77,4 @@
     <string name="camera_video_saved">Video saved: %1$s</string>
     <string name="camera_capture_error">Capture failed. Start preview and try again.</string>
     <string name="camera_status_microphone_required">Microphone permission required for video audio</string>
-
 </resources>

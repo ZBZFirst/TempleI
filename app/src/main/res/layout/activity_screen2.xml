@@ -6,7 +6,7 @@
     android:layout_height="match_parent"
     android:orientation="vertical">
 
-    <!-- Screen 2 hosts the OBS streaming architecture workspace. -->
+    <!-- Screen 2 is the OBS SRT ingest configuration and control surface. -->
     <TextView
         android:id="@+id/screenTitle"
         android:layout_width="match_parent"
@@ -51,7 +51,7 @@
                 android:layout_height="wrap_content"
                 android:orientation="vertical">
 
-                <!-- Pipeline section keeps architecture intent visible during iterative build-out. -->
+                <!-- Section A: endpoint setup + validation. -->
                 <LinearLayout
                     android:id="@+id/streamPlanSection"
                     android:layout_width="match_parent"
@@ -65,7 +65,7 @@
                         android:id="@+id/streamPlanTitle"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="@string/obs_plan_pipeline_title"
+                        android:text="@string/obs_section_a_title"
                         android:textSize="20sp"
                         android:textStyle="bold" />
 
@@ -74,7 +74,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="8dp"
-                        android:text="@string/obs_plan_pipeline_summary" />
+                        android:text="@string/obs_section_a_summary" />
 
                     <LinearLayout
                         android:layout_width="match_parent"
@@ -87,7 +87,7 @@
                             android:layout_width="0dp"
                             android:layout_height="96dp"
                             android:layout_weight="1"
-                            android:text="@string/obs_plan_define_endpoint" />
+                            android:text="@string/obs_button_edit_host" />
 
                         <Space
                             android:layout_width="12dp"
@@ -98,7 +98,7 @@
                             android:layout_width="0dp"
                             android:layout_height="96dp"
                             android:layout_weight="1"
-                            android:text="@string/obs_plan_define_transport" />
+                            android:text="@string/obs_button_edit_port" />
                     </LinearLayout>
 
                     <LinearLayout
@@ -112,7 +112,7 @@
                             android:layout_width="0dp"
                             android:layout_height="96dp"
                             android:layout_weight="1"
-                            android:text="@string/obs_plan_define_muxing" />
+                            android:text="@string/obs_button_validate_test" />
 
                         <Space
                             android:layout_width="12dp"
@@ -123,11 +123,11 @@
                             android:layout_width="0dp"
                             android:layout_height="96dp"
                             android:layout_weight="1"
-                            android:text="@string/obs_plan_define_recovery" />
+                            android:text="@string/obs_button_preset_reset" />
                     </LinearLayout>
                 </LinearLayout>
 
-                <!-- State section mirrors the proposed streaming state machine for implementation tasks. -->
+                <!-- Section B: OBS string generation + stream start/stop controls. -->
                 <LinearLayout
                     android:id="@+id/statePlanSection"
                     android:layout_width="match_parent"
@@ -141,7 +141,7 @@
                         android:id="@+id/statePlanTitle"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="@string/obs_plan_state_title"
+                        android:text="@string/obs_section_b_title"
                         android:textSize="20sp"
                         android:textStyle="bold" />
 
@@ -150,7 +150,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="8dp"
-                        android:text="@string/obs_plan_state_summary" />
+                        android:text="@string/obs_section_b_summary" />
 
                     <LinearLayout
                         android:layout_width="match_parent"
@@ -163,7 +163,7 @@
                             android:layout_width="0dp"
                             android:layout_height="96dp"
                             android:layout_weight="1"
-                            android:text="@string/obs_plan_setup_state_machine" />
+                            android:text="@string/obs_button_show_input" />
 
                         <Space
                             android:layout_width="12dp"
@@ -174,7 +174,7 @@
                             android:layout_width="0dp"
                             android:layout_height="96dp"
                             android:layout_weight="1"
-                            android:text="@string/obs_plan_setup_failures" />
+                            android:text="@string/obs_button_toggle_profile" />
                     </LinearLayout>
 
                     <LinearLayout
@@ -188,7 +188,7 @@
                             android:layout_width="0dp"
                             android:layout_height="96dp"
                             android:layout_weight="1"
-                            android:text="@string/obs_plan_setup_contracts" />
+                            android:text="@string/obs_button_start_stream" />
 
                         <Space
                             android:layout_width="12dp"
@@ -199,8 +199,61 @@
                             android:layout_width="0dp"
                             android:layout_height="96dp"
                             android:layout_weight="1"
-                            android:text="@string/obs_plan_setup_file_map" />
+                            android:text="@string/obs_button_stop_stream" />
                     </LinearLayout>
+                </LinearLayout>
+
+                <!-- OBS setup outputs required by workflow contract. -->
+                <LinearLayout
+                    android:id="@+id/obsOutputSection"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="24dp"
+                    android:background="@color/debug_warning"
+                    android:orientation="vertical"
+                    android:padding="16dp">
+
+                    <TextView
+                        android:id="@+id/obsSummaryTitle"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/obs_setup_summary_title"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/obsSetupSummaryText"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:text="@string/obs_setup_summary_placeholder" />
+
+                    <TextView
+                        android:id="@+id/sessionStateText"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
+                        android:text="@string/obs_session_state_placeholder" />
+
+                    <TextView
+                        android:id="@+id/validationResultText"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:text="@string/obs_validation_placeholder" />
+
+                    <TextView
+                        android:id="@+id/connectionResultText"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:text="@string/obs_connection_placeholder" />
+
+                    <TextView
+                        android:id="@+id/lastErrorText"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:text="@string/obs_last_error_placeholder" />
                 </LinearLayout>
 
             </LinearLayout>
