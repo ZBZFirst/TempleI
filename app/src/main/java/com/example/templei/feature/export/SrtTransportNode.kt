@@ -14,8 +14,12 @@ object SrtTransportNode {
     private var sending = false
     private var runtime: RuntimeBinding = RuntimeBinding.Uninitialized
     private var packetsSent: Long = 0
+    private var bytesSent: Long = 0
     private var reconnectAttempts: Int = 0
     private var lastEndpoint: ObsEndpointSpec? = null
+    private var socketState: String = "UNINITIALIZED"
+    private var nativeStatsSnapshot: String = ""
+    private var lastSendResult: String = "not attempted"
 
     /**
      * Probe for runtime availability once and cache the result.
@@ -57,10 +61,15 @@ object SrtTransportNode {
                 sending = false
                 reconnectAttempts = 0
                 lastEndpoint = endpoint
+                packetsSent = 0
+                bytesSent = 0
+                lastSendResult = "not attempted"
+                refreshNativeSnapshot()
                 return Result.success(Unit)
             }
             reconnectAttempts += 1
             lastError = connectResult.exceptionOrNull() ?: lastError
+            refreshNativeSnapshot()
         }
 
         connected = false
@@ -83,7 +92,10 @@ object SrtTransportNode {
         sending = startResult.isSuccess
         if (sending) {
             packetsSent = 0
+            bytesSent = 0
+            lastSendResult = "not attempted"
         }
+        refreshNativeSnapshot()
         return startResult
     }
 
@@ -104,17 +116,25 @@ object SrtTransportNode {
         val sendResult = resolved.getOrThrow().sendPacket(packet)
         if (sendResult.isSuccess) {
             packetsSent += 1
+            bytesSent += packet.size
+            lastSendResult = "ok:${packet.size}"
+        } else {
+            val reason = sendResult.exceptionOrNull()?.message ?: "send failed"
+            lastSendResult = "failed:$reason"
         }
+        refreshNativeSnapshot()
         return sendResult
     }
 
     fun stopSending() {
-        if (sending) {
+        if (sending || connected) {
             resolveRuntime().onSuccess { it.stopSending() }
         }
         connected = false
         sending = false
         lastEndpoint = null
+        lastSendResult = "stopped"
+        refreshNativeSnapshot()
     }
 
     fun isConnected(): Boolean = connected
@@ -130,6 +150,11 @@ object SrtTransportNode {
         connected = false
         sending = false
         lastEndpoint = null
+        packetsSent = 0
+        bytesSent = 0
+        socketState = "UNINITIALIZED"
+        nativeStatsSnapshot = ""
+        lastSendResult = "not attempted"
     }
 
     private fun resolveRuntime(): Result<Runtime> {
@@ -147,6 +172,11 @@ object SrtTransportNode {
             is RuntimeBinding.Loaded -> Result.success(current.runtime)
             is RuntimeBinding.Unavailable -> Result.failure(IllegalStateException(current.reason))
         }
+    }
+
+    private fun refreshNativeSnapshot() {
+        socketState = runCatching { SrtNativeBridge.nativeSocketState() }.getOrDefault(socketState)
+        nativeStatsSnapshot = runCatching { SrtNativeBridge.nativeStatsSnapshot() }.getOrDefault(nativeStatsSnapshot)
     }
 
     private fun loadNativeRuntime(): RuntimeBinding {
@@ -168,17 +198,26 @@ object SrtTransportNode {
         val connected: Boolean,
         val sending: Boolean,
         val packetsSent: Long,
+        val bytesSent: Long,
         val reconnectAttempts: Int,
         val endpoint: ObsEndpointSpec?,
+        val socketState: String,
+        val nativeStatsSnapshot: String,
+        val lastSendResult: String,
     )
 
     fun runtimeStats(): RuntimeStats {
+        refreshNativeSnapshot()
         return RuntimeStats(
             connected = connected,
             sending = sending,
             packetsSent = packetsSent,
+            bytesSent = bytesSent,
             reconnectAttempts = reconnectAttempts,
             endpoint = lastEndpoint,
+            socketState = socketState,
+            nativeStatsSnapshot = nativeStatsSnapshot,
+            lastSendResult = lastSendResult,
         )
     }
 
@@ -200,7 +239,7 @@ object SrtTransportNode {
      */
     private object JniSrtRuntime : Runtime {
         override fun connect(endpoint: ObsEndpointSpec): Result<Unit> {
-            return if (SrtNativeBridge.nativeConnect(endpoint.host, endpoint.port, endpoint.latencyMs, endpoint.mode)) {
+            return if (SrtNativeBridge.nativeConnect(endpoint.host, endpoint.port, endpoint.latencyMs, endpoint.mode, endpoint.timeoutUs)) {
                 Result.success(Unit)
             } else {
                 Result.failure(IllegalStateException(buildNativeFailure("native srt connect failed")))

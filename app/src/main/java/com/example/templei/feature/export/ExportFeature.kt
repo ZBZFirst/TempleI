@@ -182,7 +182,8 @@ object ExportFeature {
             sessionState != SessionState.Streaming -> "native runtimes loaded; ready to start"
             else -> {
                 "streaming health: mux(v=${muxStats.videoAccessUnitsIngested},a=${muxStats.audioAccessUnitsIngested},ts=${muxStats.packetsDrained}) " +
-                    "srt(sent=${srtStats.packetsSent},retries=${srtStats.reconnectAttempts})"
+                    "srt(sent=${srtStats.packetsSent},bytes=${srtStats.bytesSent},state=${srtStats.socketState}," +
+                    "last=${srtStats.lastSendResult},retries=${srtStats.reconnectAttempts},native=${srtStats.nativeStatsSnapshot})"
             }
         }
     }
