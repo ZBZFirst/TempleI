@@ -45,6 +45,8 @@ Use the entries below for Obsidian graph/linking. Paths are repo-relative and in
 - [[app/src/main/java/com/example/templei/feature/camera/CameraFeature.kt]]
 - [[app/src/main/java/com/example/templei/feature/export/ExportFeature.kt]]
 - [[app/src/main/java/com/example/templei/feature/export/StreamSessionService.kt]]
+- [[app/src/main/java/com/example/templei/feature/export/CaptureCoordinator.kt]]
+- [[app/src/main/java/com/example/templei/feature/export/VideoEncoderNode.kt]]
 - [[app/src/main/java/com/example/templei/ui/components/PulseButton.kt]]
 - [[app/src/main/java/com/example/templei/ui/components/UiPaletteBar.kt]]
 - [[app/src/main/java/com/example/templei/ui/navigation/NavGraph.kt]]
@@ -88,7 +90,7 @@ Use the entries below for Obsidian graph/linking. Paths are repo-relative and in
 ## Current implementation snapshot (as of latest reviewed commit)
 - `Screen1Activity` + `CameraFeature` currently provide camera preview, picture capture, and video recording (with microphone) and persist media into `Pictures/TempleI` and `Movies/TempleI`.
 - `Screen2Activity` and `activity_screen2.xml` now implement OBS SRT ingest configuration and control wiring (host/port edit, validate/test, preset reset, URL display, profile toggle, start/stop), and bind to a foreground-capable stream session service boundary.
-- `feature/export/ExportFeature.kt` now holds Screen 2 config persistence, validation, session state, OBS URL generation, and a transport boundary stub for pending native MPEG-TS + SRT integration.
+- `feature/export/ExportFeature.kt` now holds Screen 2 config persistence, validation, session state, OBS URL generation, and a transport boundary stub for pending native MPEG-TS + SRT integration; Round 3 adds capture-path coordination + a video encoder node contract.
 
 ## File structure snapshot and update targets
 Use this as the practical "what exists now" map before editing:
@@ -99,6 +101,8 @@ Use this as the practical "what exists now" map before editing:
   - `feature/camera/CameraFeature.kt` (existing capture pipeline)
   - `feature/export/ExportFeature.kt` (Screen 2 workflow state + transport boundary stub)
   - `feature/export/StreamSessionService.kt` (service/session command boundary for Screen 2)
+  - `feature/export/CaptureCoordinator.kt` (video-path readiness coordinator for Screen 2 start flow)
+  - `feature/export/VideoEncoderNode.kt` (H.264 encoder node contract placeholder)
 - `app/src/main/res/layout/`
   - `activity_screen1.xml` (active camera controls + preview)
   - `activity_screen2.xml` (OBS/SRT planning controls)
@@ -108,12 +112,10 @@ Use this as the practical "what exists now" map before editing:
   - High-level phased plan for Android → OBS over LAN.
 
 Expected near-term files to be created/expanded for OBS LAN implementation:
-- `app/src/main/java/com/example/templei/feature/export/CaptureCoordinator.kt`
 - `app/src/main/java/com/example/templei/feature/export/ObsEndpointSpec.kt`
 - `app/src/main/java/com/example/templei/feature/export/StreamState.kt`
 - `app/src/main/java/com/example/templei/feature/export/SrtTransportNode.kt`
 - `app/src/main/java/com/example/templei/feature/export/TsMuxerNode.kt`
-- `app/src/main/java/com/example/templei/feature/export/VideoEncoderNode.kt`
 - `app/src/main/java/com/example/templei/feature/export/AudioEncoderNode.kt`
 - `app/src/main/java/com/example/templei/ui/state/` additions for Screen 2 view state/events.
 
@@ -140,6 +142,7 @@ Risks that usually force extra back-and-forth:
 - Foreground service and permission behavior differences across Android versions.
 
 ## Completed work log (most recent first)
+- Round 3 video-path pass added: `CaptureCoordinator` + `VideoEncoderNode` contracts now gate Screen 2 Start flow and verify camera preview readiness before transport start.
 - Foreground-capable service/session boundary added: `Screen2Activity` now lifecycle-binds to `StreamSessionService`, and Start/Stop route through the service binder command channel.
 - Screen 2 OBS workflow now wires all eight existing buttons to host/port edit, validate/test, preset reset, input-string display, profile toggle, start, and stop actions.
 - Screen 2 now renders required OBS outputs: setup summary, session state, validation message, last connection test, and last error.
@@ -153,7 +156,7 @@ Risks that usually force extra back-and-forth:
 ## Round-by-round implementation checklist
 - [COMPLETED] Round 1: Contract + config pass (endpoint model, Screen 2 validation/persistence, OBS URL generation).
 - [COMPLETED] Round 2: Service/session pass (foreground stream service boundary and lifecycle-safe command channel).
-- [ ] Round 3: Video path pass (camera encoded output routing into streaming pipeline).
+- [COMPLETED] Round 3: Video path pass (camera encoded output routing into streaming pipeline).
 - [ ] Round 4: Audio path pass (mic ingest + A/V clock alignment for stream path).
 - [ ] Round 5: MPEG-TS mux + SRT transport pass (native mux/sender integration behind transport boundary).
 - [ ] Round 6: OBS interoperability/tuning pass (latency, reconnect behavior, user-facing diagnostics).
