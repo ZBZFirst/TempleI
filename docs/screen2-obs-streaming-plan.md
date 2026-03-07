@@ -43,7 +43,7 @@ This plan keeps **Screen 1 camera behavior unchanged** and uses **Screen 2** as 
   - validation result
   - last connection test result
   - last error text
-- Start/Stop are wired to a minimal transport boundary (`StreamTransportGateway`) with a stub implementation that clearly reports missing native MPEG-TS mux + SRT sender integration.
+- Start/Stop are wired through `StreamTransportGateway` to the FFmpeg backend abstraction; native runtime is now FFmpeg-first with incremental JNI bring-up diagnostics.
 
 ## Screen 2 implementation phases
 
@@ -66,11 +66,11 @@ This plan keeps **Screen 1 camera behavior unchanged** and uses **Screen 2** as 
 - Add binder or command interface from Screen 2 to service.
 - Expose service state back to Screen 2 (Flow/LiveData).
 
-### Phase 4 — Encoder + mux + transport nodes
+### Phase 4 — Encoder + backend transport nodes
 - Add `VideoEncoderNode` (`MediaCodec`, H.264, hardware preferred).
 - Add `AudioEncoderNode` (AAC-LC).
-- Add `TsMuxerNode` for packetized MPEG-TS output.
-- Add `SrtTransportNode` to send TS packets to OBS endpoint.
+- Route encoded access units into FFmpeg backend ingress (`FfmpegNativeBridge`).
+- Keep `TsMuxerNode` / `SrtTransportNode` as archived legacy contracts until final removal.
 
 ### Phase 5 — Reliability + UX
 - Implement reconnect/backoff policy in transport layer.
@@ -101,14 +101,14 @@ This plan keeps **Screen 1 camera behavior unchanged** and uses **Screen 2** as 
 
 
 ## Latest completion notes
-- Round 6 interop diagnostics are now surfaced in Screen 2 status output so users can see whether OBS host/port is valid and whether native mpegts+srt runtime is still pending.
-- Round 5 mux/transport contract is now wired: `ExportFeature` gateway routes start/stop through `TsMuxerNode` and `SrtTransportNode` using `ObsEndpointSpec` URL contract.
+- PR E cutover status: Screen 2 now uses FFmpeg backend as the active transport path; diagnostics report backend state + encoded ingress counters instead of legacy mux/srt runtime placeholders.
+- Legacy `TsMuxerNode` / `SrtTransportNode` contracts are archived for reference only and are no longer in the active Screen 2 transport flow.
 - Round 4 audio-path contract is now wired: `CaptureCoordinator` configures/starts `AudioEncoderNode` and stops it during session teardown to keep A/V path orchestration paired.
 - Round 3 video-path contract is now wired: `StreamSessionService` calls `CaptureCoordinator`, which checks camera preview readiness and starts/stops video/audio encoder nodes before transport start/stop.
 - Service/session boundary is now implemented with `StreamSessionService` and a binder command channel from `Screen2Activity` for Start/Stop stream actions.
 - Validation no longer immediately faults Screen 2 for missing host/port; invalid endpoint input now keeps session state in `Idle` with explicit validation messages.
 - Validate and Start now prompt for host input when empty to reduce dead-end `host missing` flows.
-- Transport availability is now reported in endpoint test and Start path separately; Start transitions to `Faulted` only when native MPEG-TS + SRT transport is unavailable.
+- Transport availability is now reported in endpoint test and Start path separately; Start transitions to `Faulted` on FFmpeg backend/runtime unavailability.
 
 
 

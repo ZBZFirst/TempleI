@@ -132,7 +132,55 @@ val verifySrtDependency by tasks.registering {
     }
 }
 
+
+val ffmpegOutputDirArm64 = layout.projectDirectory.dir("src/main/jniLibs/arm64-v8a")
+val ffmpegRequiredLibs = listOf(
+    "libavcodec.so",
+    "libavformat.so",
+    "libavutil.so",
+    "libswresample.so",
+)
+
+val buildFfmpegArm64 by tasks.registering(Exec::class) {
+    group = "native dependencies"
+    description = "Build FFmpeg runtime libs for arm64-v8a and copy them into app/src/main/jniLibs/arm64-v8a"
+    commandLine(
+        "bash",
+        File(rootDir, "scripts/build-ffmpeg-android.sh").absolutePath,
+        "arm64-v8a",
+    )
+    onlyIf {
+        ffmpegRequiredLibs.any { !ffmpegOutputDirArm64.file(it).asFile.exists() }
+    }
+}
+
+val installFfmpegArm64 by tasks.registering {
+    group = "native dependencies"
+    description = "Install FFmpeg runtime libs for arm64-v8a when missing"
+    dependsOn(buildFfmpegArm64)
+    doLast {
+        logger.lifecycle("FFmpeg arm64 runtime check completed in ${ffmpegOutputDirArm64.asFile}")
+    }
+}
+
+val verifyFfmpegDependency by tasks.registering {
+    group = "verification"
+    description = "Verify FFmpeg runtime libs are packaged for the enabled ABI"
+    doLast {
+        val missing = ffmpegRequiredLibs.filterNot { ffmpegOutputDirArm64.file(it).asFile.exists() }
+        if (missing.isNotEmpty()) {
+            throw GradleException(
+                "Missing FFmpeg runtime dependencies for arm64-v8a: ${missing.joinToString()}. " +
+                    "Run './gradlew :app:buildFfmpegArm64' (requires ANDROID_NDK_HOME + network) " +
+                    "or provide prebuilt FFmpeg runtime libraries under app/src/main/jniLibs/arm64-v8a/."
+            )
+        }
+    }
+}
+
 tasks.named("preBuild") {
     dependsOn(installSrtArm64)
     dependsOn(verifySrtDependency)
+    dependsOn(installFfmpegArm64)
+    dependsOn(verifyFfmpegDependency)
 }

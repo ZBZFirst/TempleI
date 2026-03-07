@@ -2,7 +2,6 @@ package com.example.templei.feature.export
 
 import android.content.Context
 import android.content.SharedPreferences
-import android.util.Log
 
 /**
  * Screen 2 export/stream state holder for OBS-over-LAN ingest setup.
@@ -140,7 +139,7 @@ object ExportFeature {
         StreamPipelineMetrics.reset()
         lastDiagnosticSummary = "diagnostics pending"
         lastDiagnosticAtMs = 0
-        val started = transportGateway.startStream(config.toEndpointSpec())
+        val started = transportGateway.startStream(config.toEndpointSpec(), config.streamMode)
         return if (started.isSuccess) {
             sessionState = SessionState.Streaming
             lastError = ""
@@ -199,19 +198,17 @@ object ExportFeature {
             return "$preflightMessage; waiting for live transport health"
         }
 
-        val muxStats = TsMuxerNode.runtimeStats()
-        val srtStats = SrtTransportNode.runtimeStats()
         val videoStats = VideoEncoderNode.runtimeStats()
         val audioStats = AudioEncoderNode.runtimeStats()
+        val backendDiagnostics = transportGateway.diagnosticsSummary()
         return when {
-            sessionState != SessionState.Streaming -> "native runtimes loaded; ready to start"
+            sessionState != SessionState.Streaming -> "ffmpeg backend ready; start to begin stream session"
             else -> {
                 val diagnostics = refreshDiagnosticsSnapshotIfDue()
-                "streaming health: mode=${config.streamMode.name} video(frames=${videoStats.framesEncoded}) " +
-                    "audio(frames=${audioStats.framesEncoded}) mux(v=${muxStats.videoAccessUnitsIngested},a=${muxStats.audioAccessUnitsIngested}," +
-                    "ts=${muxStats.packetsDrained},handed=${muxStats.bytesHandedToSrt},startup=${muxStats.startupState},audioSuppressed=${muxStats.audioAccessUnitsSuppressed},lastErr=${TsMuxerNode.lastIngestError()}) " +
-                    "srt(sent=${srtStats.packetsSent},bytes=${srtStats.bytesSent},handed=${srtStats.bytesHandedToSrt},state=${srtStats.socketState}," +
-                    "last=${srtStats.lastSendResult},retries=${srtStats.reconnectAttempts},native=${srtStats.nativeStatsSnapshot}) " +
+                "streaming health: mode=${config.streamMode.name} " +
+                    "video(frames=${videoStats.framesEncoded}) " +
+                    "audio(frames=${audioStats.framesEncoded}) " +
+                    "backend=${transportGateway.activeBackendName()} backendDiag={$backendDiagnostics} " +
                     "diag{$diagnostics}"
             }
         }
@@ -246,11 +243,7 @@ object ExportFeature {
         )
     }
 
-    private fun transportAvailabilityMessage(): String {
-        val muxMessage = TsMuxerNode.availabilityMessage()
-        val srtMessage = SrtTransportNode.availabilityMessage()
-        return "$muxMessage; $srtMessage"
-    }
+    private fun transportAvailabilityMessage(): String = transportGateway.availabilityMessage()
 
     private fun preflightStartMessage(config: ObsStreamConfig): String? {
         val host = config.host.trim()
@@ -262,7 +255,7 @@ object ExportFeature {
             return "preflight failed: port invalid"
         }
 
-        if (!TsMuxerNode.isAvailable() || !SrtTransportNode.isAvailable()) {
+        if (!transportGateway.isAvailable()) {
             return "preflight failed: ${transportAvailabilityMessage()}"
         }
 
@@ -271,124 +264,43 @@ object ExportFeature {
 
     interface StreamTransportGateway {
         fun isAvailable(): Boolean
-        fun startStream(endpoint: ObsEndpointSpec): Result<Unit>
+        fun availabilityMessage(): String
+        fun activeBackendName(): String
+        fun startStream(endpoint: ObsEndpointSpec, streamMode: CaptureCoordinator.StreamPathMode): Result<Unit>
         fun stopStream(): Result<Unit>
+        fun diagnosticsSummary(): String
     }
 
     private object DefaultTransportGateway : StreamTransportGateway {
-        private const val MUX_TO_SRT_QUEUE_CAPACITY = 256
-
-        private val packetQueueLock = Any()
-        private val muxToSrtQueue = ArrayDeque<ByteArray>()
-
-        @Volatile
-        private var sendLoopActive = false
-        private var senderThread: Thread? = null
+        private var activeBackendId: NativeStreamBackend.BackendId = NativeStreamBackend.BackendId.Ffmpeg
 
         override fun isAvailable(): Boolean {
-            return TsMuxerNode.isAvailable() && SrtTransportNode.isAvailable()
+            return NativeStreamBackends.activeBackend().isAvailable()
         }
 
-        override fun startStream(endpoint: ObsEndpointSpec): Result<Unit> {
-            TsMuxerNode.resetRuntimeState()
-            SrtTransportNode.resetRuntimeState()
-            stopSenderWorker()
+        override fun availabilityMessage(): String {
+            return NativeStreamBackends.availabilitySummary()
+        }
 
-            val muxPrepared: Result<Unit> = TsMuxerNode.prepare()
-            if (muxPrepared.isFailure) {
-                val reason = muxPrepared.exceptionOrNull()?.message ?: TsMuxerNode.availabilityMessage()
-                return Result.failure(IllegalStateException("mux prepare failed: $reason"))
-            }
+        override fun activeBackendName(): String {
+            return activeBackendId.name
+        }
 
-            val connected: Result<Unit> = SrtTransportNode.connect(endpoint)
-            if (connected.isFailure) {
-                val reason = connected.exceptionOrNull()?.message ?: SrtTransportNode.availabilityMessage()
-                return Result.failure(IllegalStateException("srt connect failed: $reason"))
-            }
-
-            val sendingStarted: Result<Unit> = SrtTransportNode.startSending()
-            if (sendingStarted.isFailure) {
-                val reason = sendingStarted.exceptionOrNull()?.message ?: SrtTransportNode.availabilityMessage()
-                return Result.failure(IllegalStateException("srt send-start failed: $reason"))
-            }
-
-            startSenderWorker()
-            TsMuxerNode.setPacketOutputListener { packet ->
-                enqueueMuxPacket(packet)
-            }
-
-            val muxStarted: Result<Unit> = TsMuxerNode.start()
-            if (muxStarted.isFailure) {
-                val reason = muxStarted.exceptionOrNull()?.message ?: TsMuxerNode.availabilityMessage()
-                stopSenderWorker()
-                return Result.failure(IllegalStateException("mux start failed: $reason"))
-            }
-
-            return Result.success(Unit)
+        override fun startStream(endpoint: ObsEndpointSpec, streamMode: CaptureCoordinator.StreamPathMode): Result<Unit> {
+            val backend = NativeStreamBackends.activeBackend()
+            activeBackendId = backend.id
+            return backend.start(endpoint, streamMode)
         }
 
         override fun stopStream(): Result<Unit> {
-            TsMuxerNode.setPacketOutputListener(null)
-            stopSenderWorker()
-            SrtTransportNode.stopSending()
-            TsMuxerNode.stop()
-            TsMuxerNode.resetRuntimeState()
-            SrtTransportNode.resetRuntimeState()
-            return Result.success(Unit)
+            val backend = NativeStreamBackends.activeBackend()
+            val stopResult = backend.stop()
+            activeBackendId = backend.id
+            return stopResult
         }
 
-        private fun enqueueMuxPacket(packet: ByteArray) {
-            synchronized(packetQueueLock) {
-                if (muxToSrtQueue.size >= MUX_TO_SRT_QUEUE_CAPACITY) {
-                    muxToSrtQueue.removeFirstOrNull()
-                    StreamPipelineMetrics.recordQueueDrop(muxToSrt = 1)
-                }
-                muxToSrtQueue.addLast(packet)
-                updateMuxToSrtDepth()
-            }
-        }
-
-        private fun startSenderWorker() {
-            stopSenderWorker()
-            sendLoopActive = true
-            senderThread = Thread {
-                while (sendLoopActive) {
-                    val packet: ByteArray? = synchronized(packetQueueLock) {
-                        muxToSrtQueue.removeFirstOrNull().also { updateMuxToSrtDepth() }
-                    }
-                    if (packet != null) {
-                        val send: Result<Unit> = SrtTransportNode.sendPacket(packet)
-                        if (send.isFailure) {
-                            Log.e(TAG, "mux->srt send failed: ${send.exceptionOrNull()?.message.orEmpty()}")
-                        }
-                    } else {
-                        Thread.sleep(2L)
-                    }
-                }
-            }.apply {
-                name = "TempleI-MuxToSrtRelay"
-                start()
-            }
-        }
-
-        private fun stopSenderWorker() {
-            sendLoopActive = false
-            senderThread?.join(300L)
-            senderThread = null
-            synchronized(packetQueueLock) {
-                muxToSrtQueue.clear()
-            }
-            updateMuxToSrtDepth()
-        }
-
-        private fun updateMuxToSrtDepth() {
-            val muxToSrtDepth: Int = synchronized(packetQueueLock) { muxToSrtQueue.size }
-            val snapshot = StreamPipelineMetrics.snapshot()
-            StreamPipelineMetrics.updateQueueDepths(
-                cameraToEncoder = snapshot.cameraToEncoderQueueDepth,
-                encoderToMux = snapshot.encoderToMuxQueueDepth,
-                muxToSrt = muxToSrtDepth,
-            )
+        override fun diagnosticsSummary(): String {
+            return NativeStreamBackends.diagnosticsSummary()
         }
     }
 
