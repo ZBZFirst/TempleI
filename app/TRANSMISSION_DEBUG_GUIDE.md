@@ -19,6 +19,39 @@ adb logcat -c
 adb logcat -v time | rg "TempleI-SrtTransport|TempleI-TsMux|TempleI-VideoEnc|TempleI-MuxStub"
 ```
 
+Recommended (narrower) filter during active startup debugging:
+
+```bash
+adb logcat -c
+adb logcat -v time | rg "TempleI-SrtTransport|TempleI-TsMux|TempleI-VideoEnc|TempleI-MuxStub|startup-send-gate|first-idr-delivered|first PAT/PMT emitted|analysis frame size observed"
+```
+
+If logs are scrolling too fast, write a run log file for later review:
+
+```bash
+adb logcat -c
+adb logcat -v time | rg "TempleI-SrtTransport|TempleI-TsMux|TempleI-VideoEnc|TempleI-MuxStub|startup-send-gate|first-idr-delivered|first PAT/PMT emitted|analysis frame size observed" | tee obs-debug-run.log
+```
+
+Then inspect only startup/failure markers:
+
+```bash
+rg "connect-open|send-loop started|startup-send-gate|first PAT/PMT emitted|first-idr-delivered|send-packet ok|Failed to open media|Failed to find stream info|Could not detect TS packet size" obs-debug-run.log
+```
+
+Optional stage-isolated filters:
+
+```bash
+# Transport only
+adb logcat -v time | rg "TempleI-SrtTransport|connect-open|send-loop started|send-packet|connect-close"
+
+# Mux only
+adb logcat -v time | rg "TempleI-TsMux|TempleI-MuxStub|first PAT/PMT emitted|startup-send-gate"
+
+# Encoder only
+adb logcat -v time | rg "TempleI-VideoEnc|codec-start|codec-format|first-idr-delivered|encoder-reconfigure"
+```
+
 Capture these lines:
 - SRT open/start/send/close lines.
 - Mux startup state lines.
