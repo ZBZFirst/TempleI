@@ -55,8 +55,9 @@ object VideoEncoderNode {
             return Result.failure(IllegalStateException(lastError))
         }
 
+        // Intentionally keep video placeholder silent until real MediaCodec output is wired.
+        // Sending synthetic/invalid H.264 data causes continuous OBS decoder error flooding.
         nodeState = NodeState.Running
-        emitCodecBootstrapSample()
         return Result.success(Unit)
     }
 
@@ -68,13 +69,4 @@ object VideoEncoderNode {
     fun state(): NodeState = nodeState
 
     fun error(): String = lastError
-
-    private fun emitCodecBootstrapSample() {
-        val sample = EncodedAccessUnit(
-            data = byteArrayOf(0x00, 0x00, 0x00, 0x01, 0x67.toByte(), 0x42.toByte(), 0x00, 0x1f),
-            presentationTimeUs = System.nanoTime() / 1_000,
-            flags = 1,
-        )
-        outputListener?.invoke(sample)
-    }
 }
