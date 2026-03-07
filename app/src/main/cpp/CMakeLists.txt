@@ -11,6 +11,7 @@ add_library(templei_srt SHARED
 )
 
 find_library(log-lib log)
+find_library(dl-lib dl)
 
 target_link_libraries(templei_mux ${log-lib})
-target_link_libraries(templei_srt ${log-lib})
+target_link_libraries(templei_srt ${log-lib} ${dl-lib})
