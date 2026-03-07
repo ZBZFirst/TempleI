@@ -103,3 +103,11 @@ This plan keeps **Screen 1 camera behavior unchanged** and uses **Screen 2** as 
 - Validation no longer immediately faults Screen 2 for missing host/port; invalid endpoint input now keeps session state in `Idle` with explicit validation messages.
 - Validate and Start now prompt for host input when empty to reduce dead-end `host missing` flows.
 - Transport availability is now reported in endpoint test and Start path separately; Start transitions to `Faulted` only when native MPEG-TS + SRT transport is unavailable.
+
+
+## Native SRT dependency packaging note
+- Current sender runtime expects a loadable SRT shared library (`libsrt.so` or `libsrt.so.1`) at app runtime.
+- Package per-ABI binaries under `app/src/main/jniLibs/<abi>/libsrt.so` (for example `arm64-v8a`).
+- If missing, Screen 2 start diagnostics now surface ABI + attempted library names to speed setup troubleshooting.
+- Preflight before Start now checks host, port, and native runtime availability so Screen 2 can fail early with explicit dependency guidance before transitioning to `Faulted`.
+

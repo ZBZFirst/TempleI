@@ -62,6 +62,13 @@ object CaptureCoordinator {
             return StartResult(isReady = false, error = AudioEncoderNode.error())
         }
 
+        VideoEncoderNode.setOutputListener { accessUnit ->
+            TsMuxerNode.ingestVideo(accessUnit)
+        }
+        AudioEncoderNode.setOutputListener { accessUnit ->
+            TsMuxerNode.ingestAudio(accessUnit)
+        }
+
         val videoStarted = VideoEncoderNode.start()
         if (videoStarted.isFailure) {
             return StartResult(isReady = false, error = VideoEncoderNode.error())
@@ -76,6 +83,8 @@ object CaptureCoordinator {
     }
 
     fun stopCapturePathSession() {
+        VideoEncoderNode.setOutputListener(null)
+        AudioEncoderNode.setOutputListener(null)
         VideoEncoderNode.stop()
         AudioEncoderNode.stop()
     }
