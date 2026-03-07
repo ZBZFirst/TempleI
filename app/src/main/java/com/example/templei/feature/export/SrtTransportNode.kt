@@ -1,5 +1,7 @@
 package com.example.templei.feature.export
 
+import android.util.Log
+
 /**
  * SRT sender node contract for Screen 2 stream path.
  *
@@ -7,6 +9,7 @@ package com.example.templei.feature.export
  * "runtime pending" from a loaded sender integration.
  */
 object SrtTransportNode {
+    private const val TAG = "TempleI-SrtTransport"
     private const val SRT_SHARED_LIBRARY = "srt"
     private const val SRT_NATIVE_LIBRARY = "templei_srt"
 
@@ -67,6 +70,10 @@ object SrtTransportNode {
                 bytesHandedToSrt = 0
                 lastSendResult = "not attempted"
                 refreshNativeSnapshot()
+                Log.i(
+                    TAG,
+                    "connect-open mode=${endpoint.mode} host=${endpoint.host} port=${endpoint.port} latencyMs=${endpoint.latencyMs} state=$socketState",
+                )
                 return Result.success(Unit)
             }
             reconnectAttempts += 1
@@ -97,6 +104,7 @@ object SrtTransportNode {
             bytesSent = 0
             bytesHandedToSrt = 0
             lastSendResult = "not attempted"
+            Log.i(TAG, "send-loop started state=$socketState")
         }
         refreshNativeSnapshot()
         return startResult
@@ -123,10 +131,14 @@ object SrtTransportNode {
             bytesSent += packet.size
             lastSendResult = "ok:${packet.size}"
             StreamPipelineMetrics.recordSrtSendAttempt(success = true)
+            if (packetsSent <= 5 || (packetsSent % 300L) == 0L) {
+                Log.i(TAG, "send-packet ok packetIndex=$packetsSent bytes=${packet.size} state=$socketState")
+            }
         } else {
             val reason = sendResult.exceptionOrNull()?.message ?: "send failed"
             lastSendResult = "failed:$reason"
             StreamPipelineMetrics.recordSrtSendAttempt(success = false)
+            Log.e(TAG, "send-packet failed bytes=${packet.size} reason=$reason state=$socketState")
         }
         refreshNativeSnapshot()
         return sendResult
@@ -135,6 +147,9 @@ object SrtTransportNode {
     fun stopSending() {
         if (sending || connected) {
             resolveRuntime().onSuccess { it.stopSending() }
+        }
+        if (sending || connected) {
+            Log.i(TAG, "connect-close state=$socketState")
         }
         connected = false
         sending = false

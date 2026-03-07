@@ -20,6 +20,10 @@ struct MuxRuntimeState {
     std::string lastError;
     std::deque<std::vector<uint8_t>> packetQueue;
     std::map<uint16_t, uint8_t> continuityCounter;
+    bool videoSeen = false;
+    bool audioSeen = false;
+    uint8_t pmtVersion = 0;
+    uint64_t pesPacketsSinceLastPatPmt = 0;
 };
 
 std::mutex gMutex;
@@ -33,6 +37,7 @@ constexpr uint16_t kPidAudio = 0x0102;
 constexpr uint8_t kStreamTypeH264 = 0x1B;
 constexpr uint8_t kStreamTypeAac = 0x0F;
 constexpr const char* kLogTag = "TempleI-MuxStub";
+constexpr uint64_t kPatPmtRepeatIntervalPesPackets = 32;
 
 int gPatPmtLogCount = 0;
 bool gFirstVideoPesLogged = false;
@@ -118,13 +123,16 @@ void pushSectionAsTsPackets(uint16_t pid, const std::vector<uint8_t>& sectionByt
 }
 
 void emitPatAndPmt() {
+    const bool includeAudio = gState.audioSeen;
+    const uint8_t version = static_cast<uint8_t>(gState.pmtVersion & 0x1F);
+
     // PAT section.
     std::vector<uint8_t> pat;
     pat.push_back(0x00);              // table_id
     pat.push_back(0xB0);              // section_syntax_indicator + section_length hi bits
     pat.push_back(0x0D);              // section_length low bits
     pat.push_back(0x00); pat.push_back(0x01); // transport_stream_id
-    pat.push_back(0xC1);              // version=0,current_next=1
+    pat.push_back(static_cast<uint8_t>(0xC1 | ((version & 0x1F) << 1))); // version/current_next
     pat.push_back(0x00);              // section_number
     pat.push_back(0x00);              // last_section_number
     pat.push_back(0x00); pat.push_back(0x01); // program_number
@@ -140,10 +148,11 @@ void emitPatAndPmt() {
     // PMT section.
     std::vector<uint8_t> pmt;
     pmt.push_back(0x02); // table_id
-    pmt.push_back(0xB0);
-    pmt.push_back(0x17); // section_length (23)
+    const uint16_t pmtSectionLength = static_cast<uint16_t>(13 + (includeAudio ? 10 : 5));
+    pmt.push_back(static_cast<uint8_t>(0xB0 | ((pmtSectionLength >> 8) & 0x0F)));
+    pmt.push_back(static_cast<uint8_t>(pmtSectionLength & 0xFF));
     pmt.push_back(0x00); pmt.push_back(0x01); // program_number
-    pmt.push_back(0xC1);
+    pmt.push_back(static_cast<uint8_t>(0xC1 | ((version & 0x1F) << 1)));
     pmt.push_back(0x00);
     pmt.push_back(0x00);
     pmt.push_back(static_cast<uint8_t>(0xE0 | ((kPidVideo >> 8) & 0x1F))); // PCR PID
@@ -156,11 +165,13 @@ void emitPatAndPmt() {
     pmt.push_back(static_cast<uint8_t>(kPidVideo & 0xFF));
     pmt.push_back(0xF0); pmt.push_back(0x00);
 
-    // audio stream
-    pmt.push_back(kStreamTypeAac);
-    pmt.push_back(static_cast<uint8_t>(0xE0 | ((kPidAudio >> 8) & 0x1F)));
-    pmt.push_back(static_cast<uint8_t>(kPidAudio & 0xFF));
-    pmt.push_back(0xF0); pmt.push_back(0x00);
+    if (includeAudio) {
+        // audio stream (advertise only after first audio AU to avoid stale PMT declarations)
+        pmt.push_back(kStreamTypeAac);
+        pmt.push_back(static_cast<uint8_t>(0xE0 | ((kPidAudio >> 8) & 0x1F)));
+        pmt.push_back(static_cast<uint8_t>(kPidAudio & 0xFF));
+        pmt.push_back(0xF0); pmt.push_back(0x00);
+    }
 
     const uint32_t pmtCrc = crc32Mpeg(pmt, 0, pmt.size());
     pmt.push_back(static_cast<uint8_t>((pmtCrc >> 24) & 0xFF));
@@ -168,9 +179,18 @@ void emitPatAndPmt() {
     pmt.push_back(static_cast<uint8_t>((pmtCrc >> 8) & 0xFF));
     pmt.push_back(static_cast<uint8_t>(pmtCrc & 0xFF));
     pushSectionAsTsPackets(kPidPmt, pmt);
+    gState.pesPacketsSinceLastPatPmt = 0;
+    gState.pmtVersion = static_cast<uint8_t>((gState.pmtVersion + 1) & 0x1F);
     if (gPatPmtLogCount == 0) {
         __android_log_print(ANDROID_LOG_INFO, kLogTag, "first PAT/PMT emitted");
         gPatPmtLogCount = 1;
+    } else {
+        __android_log_print(
+                ANDROID_LOG_INFO,
+                kLogTag,
+                "PAT/PMT refresh emitted includeAudio=%d version=%u",
+                includeAudio ? 1 : 0,
+                static_cast<unsigned>(version));
     }
 }
 
@@ -209,10 +229,14 @@ void pushPesAsTsPackets(
 
     if (pid == kPidVideo && !gFirstVideoPesLogged) {
         gFirstVideoPesLogged = true;
+        gState.videoSeen = true;
+        emitPatAndPmt();
         __android_log_print(ANDROID_LOG_INFO, kLogTag, "first video PES streamId=0x%02X payload=%zu ptsUs=%lld", streamId, payloadLen, static_cast<long long>(ptsUs));
     }
     if (pid == kPidAudio && !gFirstAudioPesLogged) {
         gFirstAudioPesLogged = true;
+        gState.audioSeen = true;
+        emitPatAndPmt();
         __android_log_print(ANDROID_LOG_INFO, kLogTag, "first audio PES streamId=0x%02X payload=%zu ptsUs=%lld", streamId, payloadLen, static_cast<long long>(ptsUs));
     }
 
@@ -224,8 +248,13 @@ void pushPesAsTsPackets(
         auto packet = buildTsPacket(pid, first, pes.data() + offset, chunkLen, cc++);
         gState.packetQueue.push_back(std::move(packet));
         logPidPacket(pid);
+        gState.pesPacketsSinceLastPatPmt += 1;
         offset += chunkLen;
         first = false;
+
+        if (gState.pesPacketsSinceLastPatPmt >= kPatPmtRepeatIntervalPesPackets) {
+            emitPatAndPmt();
+        }
     }
 }
 
