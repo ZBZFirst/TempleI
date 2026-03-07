@@ -2,10 +2,13 @@ package com.example.templei.feature.camera
 
 import android.content.ContentValues
 import android.content.Context
+import android.media.ImageFormat
 import android.provider.MediaStore
 import androidx.camera.core.CameraSelector
+import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
+import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.video.MediaStoreOutputOptions
@@ -20,6 +23,8 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
+import java.nio.ByteBuffer
+import java.util.concurrent.Executors
 
 /**
  * Shared camera pipeline for preview, image capture, and video recording.
@@ -32,6 +37,13 @@ object CameraFeature {
         FRONT,
     }
 
+    data class FramePacket(
+        val width: Int,
+        val height: Int,
+        val timestampNs: Long,
+        val i420Data: ByteArray,
+    )
+
     private const val IMAGE_RELATIVE_PATH = "Pictures/TempleI"
     private const val VIDEO_RELATIVE_PATH = "Movies/TempleI"
 
@@ -40,14 +52,22 @@ object CameraFeature {
     private var previewUseCase: Preview? = null
     private var imageCapture: ImageCapture? = null
     private var videoCapture: VideoCapture<Recorder>? = null
+    private var imageAnalysis: ImageAnalysis? = null
     private var activeRecording: Recording? = null
     private var isBound = false
     private var isRecording = false
+    private var frameOutputListener: ((FramePacket) -> Unit)? = null
+
+    private val analysisExecutor = Executors.newSingleThreadExecutor()
 
     fun selectedLens(): LensOption = selectedLensOption
 
     fun selectLens(option: LensOption) {
         selectedLensOption = option
+    }
+
+    fun setFrameOutputListener(listener: ((FramePacket) -> Unit)?) {
+        frameOutputListener = listener
     }
 
     fun hasCamera(context: Context, option: LensOption = selectedLensOption): Boolean {
@@ -87,6 +107,15 @@ object CameraFeature {
         val recorder = Recorder.Builder().setQualitySelector(QualitySelector.from(Quality.HD)).build()
         val videoCaptureUseCase = VideoCapture.withOutput(recorder)
 
+        val imageAnalysisUseCase = ImageAnalysis.Builder()
+            .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+            .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888)
+            .build().also { analysis ->
+                analysis.setAnalyzer(analysisExecutor) { imageProxy ->
+                    handleAnalysisFrame(imageProxy)
+                }
+            }
+
         provider.unbindAll()
         provider.bindToLifecycle(
             CameraSessionLifecycleOwner,
@@ -94,11 +123,13 @@ object CameraFeature {
             preview,
             imageCaptureUseCase,
             videoCaptureUseCase,
+            imageAnalysisUseCase,
         )
 
         previewUseCase = preview
         imageCapture = imageCaptureUseCase
         videoCapture = videoCaptureUseCase
+        imageAnalysis = imageAnalysisUseCase
         isBound = true
         onStarted()
     }
@@ -109,6 +140,7 @@ object CameraFeature {
         previewUseCase = null
         imageCapture = null
         videoCapture = null
+        imageAnalysis = null
         isBound = false
     }
 
@@ -226,6 +258,100 @@ object CameraFeature {
 
     fun isVideoRecording(): Boolean = isRecording
 
+    private fun handleAnalysisFrame(imageProxy: ImageProxy) {
+        try {
+            if (imageProxy.format != ImageFormat.YUV_420_888) {
+                return
+            }
+            val listener = frameOutputListener ?: return
+            val i420 = imageProxy.toI420ByteArray() ?: return
+            listener(
+                FramePacket(
+                    width = imageProxy.width,
+                    height = imageProxy.height,
+                    timestampNs = imageProxy.imageInfo.timestamp,
+                    i420Data = i420,
+                ),
+            )
+        } finally {
+            imageProxy.close()
+        }
+    }
+
+    private fun ImageProxy.toI420ByteArray(): ByteArray? {
+        val yPlane = planes.getOrNull(0) ?: return null
+        val uPlane = planes.getOrNull(1) ?: return null
+        val vPlane = planes.getOrNull(2) ?: return null
+
+        val width = width
+        val height = height
+        val ySize = width * height
+        val chromaWidth = width / 2
+        val chromaHeight = height / 2
+        val chromaSize = chromaWidth * chromaHeight
+        val output = ByteArray(ySize + chromaSize * 2)
+
+        copyPlane(
+            source = yPlane.buffer,
+            sourceRowStride = yPlane.rowStride,
+            sourcePixelStride = yPlane.pixelStride,
+            width = width,
+            height = height,
+            destination = output,
+            destinationOffset = 0,
+            destinationPixelStride = 1,
+            destinationRowStride = width,
+        )
+
+        copyPlane(
+            source = uPlane.buffer,
+            sourceRowStride = uPlane.rowStride,
+            sourcePixelStride = uPlane.pixelStride,
+            width = chromaWidth,
+            height = chromaHeight,
+            destination = output,
+            destinationOffset = ySize,
+            destinationPixelStride = 1,
+            destinationRowStride = chromaWidth,
+        )
+
+        copyPlane(
+            source = vPlane.buffer,
+            sourceRowStride = vPlane.rowStride,
+            sourcePixelStride = vPlane.pixelStride,
+            width = chromaWidth,
+            height = chromaHeight,
+            destination = output,
+            destinationOffset = ySize + chromaSize,
+            destinationPixelStride = 1,
+            destinationRowStride = chromaWidth,
+        )
+
+        return output
+    }
+
+    private fun copyPlane(
+        source: ByteBuffer,
+        sourceRowStride: Int,
+        sourcePixelStride: Int,
+        width: Int,
+        height: Int,
+        destination: ByteArray,
+        destinationOffset: Int,
+        destinationPixelStride: Int,
+        destinationRowStride: Int,
+    ) {
+        val sourceBuffer = source.duplicate()
+        for (row in 0 until height) {
+            val sourceRowStart = row * sourceRowStride
+            val destinationRowStart = destinationOffset + row * destinationRowStride
+            for (col in 0 until width) {
+                val sourceIndex = sourceRowStart + col * sourcePixelStride
+                val destinationIndex = destinationRowStart + col * destinationPixelStride
+                destination[destinationIndex] = sourceBuffer.get(sourceIndex)
+            }
+        }
+    }
 
     /**
      * Lifecycle owner kept in RESUMED so camera can continue across Activity navigation.
