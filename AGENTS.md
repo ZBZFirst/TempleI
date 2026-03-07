@@ -48,6 +48,7 @@ Use the entries below for Obsidian graph/linking. Paths are repo-relative and in
 - [[app/src/main/java/com/example/templei/feature/export/CaptureCoordinator.kt]]
 - [[app/src/main/java/com/example/templei/feature/export/VideoEncoderNode.kt]]
 - [[app/src/main/java/com/example/templei/feature/export/AudioEncoderNode.kt]]
+- [[app/src/main/java/com/example/templei/feature/export/FfmpegNativeBridge.kt]]
 - [[app/src/main/java/com/example/templei/feature/export/TsMuxerNode.kt]]
 - [[app/src/main/java/com/example/templei/feature/export/SrtTransportNode.kt]]
 - [[app/src/main/java/com/example/templei/feature/export/ObsEndpointSpec.kt]]
@@ -75,6 +76,8 @@ Use the entries below for Obsidian graph/linking. Paths are repo-relative and in
 - [[app/src/main/res/xml/data_extraction_rules.xml]]
 - [[app/src/main/res/drawable/ic_launcher_background.xml]]
 - [[app/src/main/res/drawable/ic_launcher_foreground.xml]]
+- [[app/src/main/cpp/templei_ffmpeg_stub.cpp]]
+- [[scripts/build-ffmpeg-android.sh]]
 - [[app/src/main/res/mipmap-anydpi/ic_launcher.xml]]
 - [[app/src/main/res/mipmap-anydpi/ic_launcher_round.xml]]
 - [[app/src/main/res/mipmap-mdpi/ic_launcher.webp]]
@@ -90,6 +93,7 @@ Use the entries below for Obsidian graph/linking. Paths are repo-relative and in
 - [[app/src/test/java/com/example/templei/ExampleUnitTest.kt]]
 - [[app/src/androidTest/java/com/example/templei/ExampleInstrumentedTest.kt]]
 - [[docs/screen2-obs-streaming-plan.md]]
+- [[docs/ffmpeg-srt-migration-usage.md]]
 
 
 ## Current implementation snapshot (as of latest reviewed commit)
@@ -98,7 +102,7 @@ Use the entries below for Obsidian graph/linking. Paths are repo-relative and in
 - Screen responsibility split is strict:
   - Screen 1 hosts camera preview/capture controls.
   - Screen 2 hosts configuration + start/stop stream commands only, with **no camera preview UI**.
-- `feature/export/ExportFeature.kt` now holds Screen 2 config persistence, validation, session state, OBS URL generation, and a transport gateway that now routes through TS mux/SRT node contracts; Rounds 3-6 add capture-path coordination, video/audio/mux/transport endpoint contracts, and interop diagnostics.
+- `feature/export/ExportFeature.kt` now holds Screen 2 config persistence, validation, session state, OBS URL generation, and a transport gateway that routes through the FFmpeg backend abstraction; native FFmpeg JNI bring-up currently handles backend lifecycle + encoded AU ingress with diagnostics.
 
 ## File structure snapshot and update targets
 Use this as the practical "what exists now" map before editing:
@@ -112,8 +116,8 @@ Use this as the practical "what exists now" map before editing:
   - `feature/export/CaptureCoordinator.kt` (video-path readiness coordinator for Screen 2 start flow)
   - `feature/export/VideoEncoderNode.kt` (H.264 encoder node contract placeholder)
   - `feature/export/AudioEncoderNode.kt` (AAC-LC audio encoder node contract placeholder)
-  - `feature/export/TsMuxerNode.kt` (MPEG-TS mux contract placeholder)
-  - `feature/export/SrtTransportNode.kt` (SRT sender contract placeholder)
+  - `feature/export/TsMuxerNode.kt` (legacy MPEG-TS mux contract archive; no longer active in Screen 2 path)
+  - `feature/export/SrtTransportNode.kt` (legacy SRT sender contract archive; no longer active in Screen 2 path)
   - `feature/export/ObsEndpointSpec.kt` (OBS endpoint URL contract)
   - `feature/export/StreamState.kt` (pipeline state contract for transport orchestration)
 - `app/src/main/res/layout/`
@@ -150,6 +154,9 @@ Risks that usually force extra back-and-forth:
 - Foreground service and permission behavior differences across Android versions.
 
 ## Completed work log (most recent first)
+- PR E FFmpeg cutover pass added: Screen 2 transport now uses FFmpeg backend as the active runtime path with backend diagnostics, and legacy `TsMuxerNode`/`SrtTransportNode` contracts are retained only as archive references.
+- PR D audio-path expansion added: FFmpeg backend JNI ingress now accepts AAC access units and stream mode gating now covers `FullAv` / `VideoOnly` / `AudioOnly`.
+- PR C video-path FFmpeg pass added: backend-native JNI bridge now handles VideoOnly encoded AU ingress with start/stop/runtime diagnostics wiring.
 - Round 6 interoperability/tuning pass added: Screen 2 now surfaces explicit OBS interoperability readiness diagnostics tied to host/port validity and TS/SRT runtime availability.
 - Round 5 mux/transport pass added: `TsMuxerNode` + `SrtTransportNode` + `ObsEndpointSpec`/`StreamState` contracts are now wired through `ExportFeature` gateway start/stop flow.
 - Round 4 audio-path pass added: `AudioEncoderNode` contract and capture coordinator audio gating are now included before Screen 2 transport start.
@@ -179,14 +186,14 @@ Risks that usually force extra back-and-forth:
 
 
 ## Runtime limitation and next implementation target
-- Current status: **actual live OBS ingest is not fully connected yet**.
-- Reason: `TsMuxerNode` and `SrtTransportNode` are contract placeholders and still report runtime unavailability until native mux/sender integration is implemented.
+- Current status: **FFmpeg backend is now the active Screen 2 transport path with JNI bring-up stubs for encoded video/audio ingress**.
+- Reason: Full native FFmpeg mux/send runtime behavior is still iterative; current native layer is a bring-up stub for lifecycle and AU ingress diagnostics.
 - Planned follow-up (next implementation target):
-  1. Implement native MPEG-TS mux runtime behind `TsMuxerNode`.
-  2. Implement native SRT sender runtime behind `SrtTransportNode`.
-  3. Wire runtime availability checks to return ready states when native layers are loaded.
-  4. Validate end-to-end ingest in OBS Media Source using Screen 2 Start/Stop flow.
-  5. Update Screen 2 diagnostics text from "runtime pending" to live transport health states.
+  1. Replace FFmpeg JNI stub internals with full `libavformat` mux + SRT send runtime logic.
+  2. Complete A/V timestamp/timebase alignment and long-session drift tuning.
+  3. Validate end-to-end OBS Media Source ingest in `FullAv`, `VideoOnly`, and `AudioOnly`.
+  4. Promote diagnostics from bring-up counters to live transport health + error domains.
+  5. Archive/remove unused legacy mux/srt contract implementations once FFmpeg runtime is production-stable.
 
 ## Current problems (updated)
 - SRT sender runtime still depends on a real `libsrt.so` at `app/src/main/jniLibs/arm64-v8a/libsrt.so` for device runtime.

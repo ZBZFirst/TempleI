@@ -1,43 +1,46 @@
-# Native SRT dependency placement
+# Native FFmpeg/SRT dependency placement
 
-If this app publishes SRT itself (Android app is the sender), you **must** ship SRT native runtime support.
-Android `MediaMuxer` does not provide SRT transport.
+Screen 2 transport now targets an FFmpeg-backed runtime path.
+Legacy TS mux/SRT node fallback has been removed.
 
-Place prebuilt `libsrt.so` files in ABI-specific folders for runtime loading by `SrtTransportNode`:
+Place prebuilt native runtime libraries in ABI-specific folders for runtime probing:
 
 - `app/src/main/jniLibs/arm64-v8a/libsrt.so`
-- `app/src/main/jniLibs/armeabi-v7a/libsrt.so` (optional)
-- `app/src/main/jniLibs/x86_64/libsrt.so` (optional emulator/dev)
+- `app/src/main/jniLibs/arm64-v8a/libavcodec.so`
+- `app/src/main/jniLibs/arm64-v8a/libavformat.so`
+- `app/src/main/jniLibs/arm64-v8a/libavutil.so`
+- `app/src/main/jniLibs/arm64-v8a/libswresample.so`
 
-The native sender attempts to load `libsrt.so` and `libsrt.so.1` via `dlopen`.
-If not found, Start Stream faults with a dependency error.
+Optional additional ABI folders can be added as needed for emulator/dev targets.
 
-## FFmpeg + libsrt note (Android)
+## FFmpeg + libsrt requirements (Android)
 
-For this use case, FFmpeg is valid **only when built with libsrt enabled** and when the final APK still contains a loadable `libsrt.so` for the target ABI.
+For this use case, FFmpeg must be built with SRT protocol support and linked against libsrt.
 
 Typical FFmpeg configure requirements include:
 
 - `--enable-network`
 - `--enable-protocol=srt`
 - `--enable-libsrt`
+- `--enable-muxer=mpegts`
 
 Practical checklist:
 
 1. Build `libsrt` for Android NDK ABI(s).
 2. Build FFmpeg against that `libsrt`.
-3. Copy resulting `libsrt.so` into `app/src/main/jniLibs/<abi>/`.
-4. Install APK and verify Screen 2 runtime status no longer reports missing shared library.
+3. Copy resulting runtime `.so` libraries into `app/src/main/jniLibs/<abi>/`.
+4. Install APK and verify Screen 2 runtime status no longer reports missing FFmpeg artifacts.
 
+## Build helper tasks
 
-## Build helper task (sender mode)
-
-To build and install the required arm64 sender library from source:
+To build and install arm64 sender/runtime libraries from source:
 
 ```bash
 export ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/<version>
 ./gradlew :app:buildSrtArm64
+./gradlew :app:buildFfmpegArm64
 ```
 
-This project now runs `installSrtArm64` + `verifySrtDependency` during `preBuild`.
-If `libsrt.so` is missing, it first attempts to build/install automatically, then fails fast with instructions if prerequisites are unavailable.
+This project now runs `installSrtArm64` + `verifySrtDependency` and
+`installFfmpegArm64` + `verifyFfmpegDependency` during `preBuild`.
+If libraries are missing, Gradle attempts to build/install automatically, then fails fast with instructions if prerequisites are unavailable.

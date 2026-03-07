@@ -157,7 +157,7 @@ object VideoEncoderNode {
         }
 
         Log.i(TAG, "encoder-reconfigure old=${activeConfig.width}x${activeConfig.height} new=${frameWidth}x${frameHeight}")
-        TsMuxerNode.markReconfigurePending()
+        // PR E: FFmpeg backend path now owns downstream reconfigure handling.
         stop()
         val updatedConfig = activeConfig.copy(width = frameWidth, height = frameHeight)
         val configured = configure(updatedConfig)
