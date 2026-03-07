@@ -49,6 +49,8 @@ object CameraFeature {
 
     private const val IMAGE_RELATIVE_PATH = "Pictures/TempleI"
     private const val VIDEO_RELATIVE_PATH = "Movies/TempleI"
+    private const val STREAM_ANALYSIS_EXPECTED_WIDTH = 1280
+    private const val STREAM_ANALYSIS_EXPECTED_HEIGHT = 720
 
     private var selectedLensOption: LensOption = LensOption.BACK
     private var cameraProvider: ProcessCameraProvider? = null
