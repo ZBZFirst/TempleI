@@ -109,8 +109,8 @@ class Screen2Activity : ComponentActivity() {
             showObsInputDialog()
         }
         findViewById<Button>(R.id.setupFailureDomainsButton).setOnClickListener {
-            val nextProfile = ExportFeature.nextProfile(currentConfig.profile)
-            currentConfig = currentConfig.copy(profile = nextProfile)
+            val nextMode = ExportFeature.nextStreamMode(currentConfig.streamMode)
+            currentConfig = currentConfig.copy(streamMode = nextMode)
             ExportFeature.saveConfig(this, currentConfig)
             renderStatus()
         }
@@ -218,7 +218,7 @@ class Screen2Activity : ComponentActivity() {
         obsSetupSummaryText.text = getString(
             R.string.obs_setup_summary_value,
             obsUrl,
-            currentConfig.profile,
+            currentConfig.streamMode.name,
         )
         sessionStateText.text = getString(R.string.obs_session_state_value, sessionState)
         validationResultText.text = getString(R.string.obs_validation_value, validationMessage)
