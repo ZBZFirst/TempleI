@@ -76,6 +76,12 @@ object TsMuxerNode {
         if (!started) {
             // Capture path currently boots before transport start; queue until mux starts.
             pendingVideoAccessUnits += accessUnit
+            val snapshot = StreamPipelineMetrics.snapshot()
+            StreamPipelineMetrics.updateQueueDepths(
+                cameraToEncoder = snapshot.cameraToEncoderQueueDepth,
+                encoderToMux = pendingVideoAccessUnits.size + pendingAudioAccessUnits.size,
+                muxToSrt = snapshot.muxToSrtQueueDepth,
+            )
             return Result.success(Unit)
         }
 
@@ -87,6 +93,7 @@ object TsMuxerNode {
         val ingestResult = resolved.getOrThrow().ingestVideo(accessUnit)
         if (ingestResult.isSuccess) {
             videoAccessUnitsIngested += 1
+            StreamPipelineMetrics.recordMuxVideoIngest()
         }
         if (ingestResult.isFailure) {
             lastIngestError = ingestResult.exceptionOrNull()?.message.orEmpty()
@@ -102,6 +109,12 @@ object TsMuxerNode {
         if (!started) {
             // Capture path currently boots before transport start; queue until mux starts.
             pendingAudioAccessUnits += accessUnit
+            val snapshot = StreamPipelineMetrics.snapshot()
+            StreamPipelineMetrics.updateQueueDepths(
+                cameraToEncoder = snapshot.cameraToEncoderQueueDepth,
+                encoderToMux = pendingVideoAccessUnits.size + pendingAudioAccessUnits.size,
+                muxToSrt = snapshot.muxToSrtQueueDepth,
+            )
             return Result.success(Unit)
         }
 
@@ -113,6 +126,7 @@ object TsMuxerNode {
         val ingestResult = resolved.getOrThrow().ingestAudio(accessUnit)
         if (ingestResult.isSuccess) {
             audioAccessUnitsIngested += 1
+            StreamPipelineMetrics.recordMuxAudioIngest()
         }
         if (ingestResult.isFailure) {
             lastIngestError = ingestResult.exceptionOrNull()?.message.orEmpty()
@@ -131,6 +145,12 @@ object TsMuxerNode {
         started = false
         pendingVideoAccessUnits.clear()
         pendingAudioAccessUnits.clear()
+        val snapshot = StreamPipelineMetrics.snapshot()
+        StreamPipelineMetrics.updateQueueDepths(
+            cameraToEncoder = snapshot.cameraToEncoderQueueDepth,
+            encoderToMux = 0,
+            muxToSrt = snapshot.muxToSrtQueueDepth,
+        )
         packetOutputListener = null
     }
 
@@ -192,6 +212,7 @@ object TsMuxerNode {
             }
             packetsDrained += 1
             bytesHandedToSrt += packet.size
+            StreamPipelineMetrics.recordMuxPacketDrain()
             packetOutputListener?.invoke(packet)
         }
     }
