@@ -127,8 +127,12 @@ object TsMuxerNode {
     }
 
     private fun drainPacketToOutput() {
-        val packet = resolveRuntime().getOrNull()?.drainPacket() ?: return
-        if (packet.isNotEmpty()) {
+        val runtimeInstance = resolveRuntime().getOrNull() ?: return
+        while (true) {
+            val packet = runtimeInstance.drainPacket()
+            if (packet.isEmpty()) {
+                break
+            }
             packetsDrained += 1
             packetOutputListener?.invoke(packet)
         }
