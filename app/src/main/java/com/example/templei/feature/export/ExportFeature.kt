@@ -186,6 +186,16 @@ object ExportFeature {
         return if (current == PROFILE_BALANCED) PROFILE_LOW_LATENCY else PROFILE_BALANCED
     }
 
+
+    private fun ObsStreamConfig.toEndpointSpec(): ObsEndpointSpec {
+        return ObsEndpointSpec(
+            host = host.trim(),
+            port = port,
+            latencyMs = 120,
+            mode = "listener",
+        )
+    }
+
     interface StreamTransportGateway {
         fun isAvailable(): Boolean
         fun startStream(endpoint: ObsEndpointSpec): Result<Unit>
