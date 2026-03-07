@@ -150,6 +150,13 @@ object ExportFeature {
         }
     }
 
+
+    fun markFault(message: String): StreamResult {
+        sessionState = SessionState.Faulted
+        lastError = message
+        return StreamResult(state = sessionState, error = lastError)
+    }
+
     fun currentState(): SessionState = sessionState
 
     fun lastError(): String = lastError

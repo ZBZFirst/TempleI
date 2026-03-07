@@ -3,6 +3,7 @@
     xmlns:tools="http://schemas.android.com/tools">
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
 
     <uses-feature
         android:name="android.hardware.camera.any"
@@ -19,6 +20,11 @@
         android:theme="@style/Theme.TempleI">
 
         <!-- Shell activities for UI scaffolding screens. -->
+        <service
+            android:name=".feature.export.StreamSessionService"
+            android:exported="false"
+            android:foregroundServiceType="camera|microphone" />
+
         <activity android:name=".Screen1Activity" android:exported="false" />
         <activity android:name=".Screen2Activity" android:exported="false" />
         <activity android:name=".Screen3Activity" android:exported="false" />

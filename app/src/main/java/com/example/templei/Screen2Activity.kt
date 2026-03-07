@@ -1,14 +1,20 @@
 package com.example.templei
 
+import android.app.AlertDialog
+import android.content.ComponentName
+import android.content.Context
+import android.content.Intent
+import android.content.ServiceConnection
 import android.os.Bundle
+import android.os.IBinder
 import android.text.InputType
 import android.widget.Button
 import android.widget.EditText
 import android.widget.TextView
 import androidx.activity.ComponentActivity
 import androidx.activity.enableEdgeToEdge
-import android.app.AlertDialog
 import com.example.templei.feature.export.ExportFeature
+import com.example.templei.feature.export.StreamSessionService
 import com.example.templei.ui.navigation.TopNavigation
 
 /**
@@ -24,6 +30,22 @@ class Screen2Activity : ComponentActivity() {
     private lateinit var lastErrorText: TextView
 
     private var currentConfig = ExportFeature.ObsStreamConfig()
+    private var streamSessionBinder: StreamSessionService.LocalBinder? = null
+    private var isServiceBound = false
+
+    private val streamServiceConnection = object : ServiceConnection {
+        override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
+            streamSessionBinder = service as? StreamSessionService.LocalBinder
+            isServiceBound = streamSessionBinder != null
+            renderStatus()
+        }
+
+        override fun onServiceDisconnected(name: ComponentName?) {
+            streamSessionBinder = null
+            isServiceBound = false
+            renderStatus()
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -35,6 +57,16 @@ class Screen2Activity : ComponentActivity() {
         bindButtons()
         currentConfig = ExportFeature.loadConfig(this)
         renderStatus()
+    }
+
+    override fun onStart() {
+        super.onStart()
+        bindStreamService()
+    }
+
+    override fun onStop() {
+        super.onStop()
+        unbindStreamService()
     }
 
     private fun bindViews() {
@@ -86,16 +118,42 @@ class Screen2Activity : ComponentActivity() {
                 return@setOnClickListener
             }
 
-            val result = ExportFeature.startStream(currentConfig)
+            val binder = streamSessionBinder
+            val result = if (binder != null) {
+                binder.startSession(currentConfig)
+            } else {
+                ExportFeature.markFault(getString(R.string.obs_service_unavailable))
+            }
+
             if (result.state == ExportFeature.SessionState.Streaming) {
                 ExportFeature.saveConfig(this, currentConfig)
             }
             renderStatus()
         }
         findViewById<Button>(R.id.setupImplementationMapButton).setOnClickListener {
-            ExportFeature.stopStream()
+            streamSessionBinder?.stopSession() ?: ExportFeature.stopStream()
             renderStatus()
         }
+    }
+
+    private fun bindStreamService() {
+        if (isServiceBound) {
+            return
+        }
+
+        val intent = Intent(this, StreamSessionService::class.java)
+        startService(intent)
+        bindService(intent, streamServiceConnection, Context.BIND_AUTO_CREATE)
+    }
+
+    private fun unbindStreamService() {
+        if (!isServiceBound) {
+            return
+        }
+
+        unbindService(streamServiceConnection)
+        streamSessionBinder = null
+        isServiceBound = false
     }
 
     private fun promptForHost() {

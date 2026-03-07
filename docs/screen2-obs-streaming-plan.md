@@ -95,6 +95,7 @@ This plan keeps **Screen 1 camera behavior unchanged** and uses **Screen 2** as 
 
 
 ## Latest completion notes
+- Service/session boundary is now implemented with `StreamSessionService` and a binder command channel from `Screen2Activity` for Start/Stop stream actions.
 - Validation no longer immediately faults Screen 2 for missing host/port; invalid endpoint input now keeps session state in `Idle` with explicit validation messages.
 - Validate and Start now prompt for host input when empty to reduce dead-end `host missing` flows.
 - Transport availability is now reported in endpoint test and Start path separately; Start transitions to `Faulted` only when native MPEG-TS + SRT transport is unavailable.

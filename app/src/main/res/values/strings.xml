@@ -54,6 +54,10 @@
     <string name="obs_ok_action">OK</string>
     <string name="obs_input_dialog_title">OBS Media Source Input</string>
     <string name="obs_input_dialog_message">Use this in OBS Media Source:\n\nLocal File: Off\nInput: %1$s\nInput Format: mpegts</string>
+    <string name="obs_service_unavailable">Stream service unavailable. Try again.</string>
+    <string name="obs_service_channel_name">OBS Stream Session</string>
+    <string name="obs_service_notification_title">TempleI stream session</string>
+    <string name="obs_service_notification_text">Screen 2 stream service is running.</string>
 
     <string name="camera_select_button">Select Camera</string>
     <string name="camera_start_button">Start Camera</string>
