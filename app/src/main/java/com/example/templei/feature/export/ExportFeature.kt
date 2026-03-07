@@ -105,7 +105,7 @@ object ExportFeature {
         val validation = validateConfig(config)
         lastConnectionTest = when {
             !validation.isValid -> "transport not ready: ${validation.message}"
-            !transportGateway.isAvailable() -> "native mux path unavailable; sender unavailable"
+            !transportGateway.isAvailable() -> "${TsMuxerNode.availabilityMessage()}; sender unavailable"
             else -> "endpoint configuration valid"
         }
         return lastConnectionTest
@@ -119,7 +119,7 @@ object ExportFeature {
 
         if (!transportGateway.isAvailable()) {
             sessionState = SessionState.Faulted
-            lastError = "native mux path unavailable; sender unavailable"
+            lastError = "${TsMuxerNode.availabilityMessage()}; sender unavailable"
             return StreamResult(state = sessionState, error = lastError)
         }
 
@@ -210,7 +210,7 @@ object ExportFeature {
         override fun startStream(endpoint: ObsEndpointSpec): Result<Unit> {
             val muxPrepared = TsMuxerNode.prepare()
             if (muxPrepared.isFailure) {
-                return Result.failure(IllegalStateException("native mux path unavailable"))
+                return Result.failure(IllegalStateException(TsMuxerNode.availabilityMessage()))
             }
 
             val connected = SrtTransportNode.connect(endpoint)
@@ -220,7 +220,7 @@ object ExportFeature {
 
             val muxStarted = TsMuxerNode.start()
             if (muxStarted.isFailure) {
-                return Result.failure(IllegalStateException("native mux path unavailable"))
+                return Result.failure(IllegalStateException(TsMuxerNode.availabilityMessage()))
             }
 
             val sendingStarted = SrtTransportNode.startSending()
