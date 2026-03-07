@@ -162,6 +162,11 @@ Risks that usually force extra back-and-forth:
   - Validate/Start now prompt for host when empty.
   - Host/port validation keeps session in `Idle` instead of forcing immediate `Faulted`.
   - `Faulted` is now reserved for attempted Start when native transport is unavailable.
+- PR 1 docs alignment completed: screen ownership is explicitly split (Screen 1 camera preview/capture; Screen 2 config + start/stop only) and stream mode scope is explicitly limited to `FullAv` / `VideoOnly` / `AudioOnly`.
+- PR 2 metrics foundation completed: added shared stream pipeline metrics model and initial stage instrumentation hooks (camera arrival, encoder queue/output, mux ingest/drain, srt send attempts) without changing runtime control flow.
+- PR 3 bounded-queue pass completed: introduced non-blocking bounded handoff queues for camera->encoder, encoder->mux, and mux->srt with freshness-first drop behavior and metrics-linked queue depth/drop tracking.
+- PR 4 backpressure reporting pass completed: added periodic structured diagnostics snapshots with explicit first-origin backpressure classification and surfaced origin/latency/queue/drop summary in Screen 2 runtime status output.
+- PR 5 validation/docs closeout completed: expanded metrics unit coverage for drop/latency/healthy-origin cases, refreshed progress line items, and recorded Android SDK limitation for local Gradle execution in this environment.
 
 
 ## Round-by-round implementation checklist
@@ -263,6 +268,13 @@ Implement the following in small PR increments; keep variable declarations expli
 ### Suggested PR slicing for the current fix path
 Use this slicing to keep changes reviewable and to avoid coupling docs/scope updates with runtime refactors:
 
+Progress status:
+- [COMPLETED] PR 1 — Scope + ownership docs alignment
+- [COMPLETED] PR 2 — Metrics model foundation
+- [COMPLETED] PR 3 — Bounded queue boundaries
+- [COMPLETED] PR 4 — Backpressure origin reporting to Screen 2
+- [COMPLETED] PR 5 — Validation + docs closeout
+
 1. **PR 1 — Scope + ownership docs alignment**
    - Confirm Screen 1 vs Screen 2 responsibility language is explicit and consistent.
    - Ensure stream mode scope is documented as `FullAv`, `VideoOnly`, `AudioOnly` only.
@@ -282,3 +294,13 @@ Use this slicing to keep changes reviewable and to avoid coupling docs/scope upd
 5. **PR 5 — Validation + docs closeout**
    - Add/update tests for queue/drop behavior and diagnostics summaries where feasible.
    - Refresh docs/status notes and clearly report any Android SDK environment limitations encountered during checks.
+
+### PR 5 closeout commentary and line items
+- Validation line items completed:
+  - Expanded unit test scenarios for backpressure-origin detection, including drop-priority, latency-over-budget, and healthy-within-budget paths.
+  - Re-ran available local checks and documented environment constraints for Android Gradle tasks.
+- Environment limitation noted:
+  - Android SDK path is unavailable in this container, so Gradle Android tasks require `ANDROID_HOME`/`ANDROID_SDK_ROOT` or `local.properties` (`sdk.dir`) to execute.
+- Next actionable line items (post PR 5):
+  - Wire native mux/srt runtimes and update availability gates from pending -> ready when libs load successfully.
+  - Add end-to-end OBS ingest validation once runtime libraries are available on device/CI.
