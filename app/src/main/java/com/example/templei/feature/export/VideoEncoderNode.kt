@@ -104,6 +104,7 @@ object VideoEncoderNode {
         val configuredHeight = activeConfig.height
         if (frame.width != configuredWidth || frame.height != configuredHeight) {
             // Ignore frames with unexpected dimensions while camera + encoder profile alignment is in progress.
+            Log.w(TAG, "drop frame due to dimension mismatch frame=${frame.width}x${frame.height} encoder=${configuredWidth}x${configuredHeight}")
             return
         }
 
@@ -116,6 +117,7 @@ object VideoEncoderNode {
                 inputBuffer.put(frame.i420Data)
                 val presentationTimeUs = frame.timestampNs / 1_000L
                 activeCodec.queueInputBuffer(inputIndex, 0, frame.i420Data.size, presentationTimeUs, 0)
+                StreamPipelineMetrics.recordEncoderQueueIn()
             }
             drainOutput()
         }.onFailure {
@@ -183,6 +185,7 @@ object VideoEncoderNode {
                                     flags = bufferInfo.flags,
                                 ),
                             )
+                            StreamPipelineMetrics.recordEncoderOutput()
                             framesEncoded += 1
                             val annexB = isAnnexB(accessUnitWithConfig)
                             val containsSps = containsNalType(accessUnitWithConfig, 7)
