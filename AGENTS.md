@@ -81,3 +81,59 @@ Use the entries below for Obsidian graph/linking. Paths are repo-relative and in
 - [[app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.webp]]
 - [[app/src/test/java/com/example/templei/ExampleUnitTest.kt]]
 - [[app/src/androidTest/java/com/example/templei/ExampleInstrumentedTest.kt]]
+- [[docs/screen2-obs-streaming-plan.md]]
+
+
+## Current implementation snapshot (as of latest reviewed commit)
+- `Screen1Activity` + `CameraFeature` currently provide camera preview, picture capture, and video recording (with microphone) and persist media into `Pictures/TempleI` and `Movies/TempleI`.
+- `Screen2Activity` and `activity_screen2.xml` are currently planning-oriented shells for the OBS-over-LAN effort, with placeholder controls and OBS/SRT terminology.
+- `feature/export/ExportFeature.kt` is still a placeholder and should be treated as the primary landing area for streaming implementation classes.
+
+## File structure snapshot and update targets
+Use this as the practical "what exists now" map before editing:
+
+- `app/src/main/java/com/example/templei/`
+  - `Screen1Activity.kt` (working camera UI; avoid regressions)
+  - `Screen2Activity.kt` (streaming setup/orchestration UI host)
+  - `feature/camera/CameraFeature.kt` (existing capture pipeline)
+  - `feature/export/ExportFeature.kt` (placeholder for streaming pipeline)
+- `app/src/main/res/layout/`
+  - `activity_screen1.xml` (active camera controls + preview)
+  - `activity_screen2.xml` (OBS/SRT planning controls)
+- `app/src/main/res/values/strings.xml`
+  - Holds both Screen 1 camera strings and Screen 2 OBS-planning strings.
+- `docs/screen2-obs-streaming-plan.md`
+  - High-level phased plan for Android → OBS over LAN.
+
+Expected near-term files to be created/expanded for OBS LAN implementation:
+- `app/src/main/java/com/example/templei/feature/export/CaptureCoordinator.kt`
+- `app/src/main/java/com/example/templei/feature/export/ObsEndpointSpec.kt`
+- `app/src/main/java/com/example/templei/feature/export/StreamState.kt`
+- `app/src/main/java/com/example/templei/feature/export/SrtTransportNode.kt`
+- `app/src/main/java/com/example/templei/feature/export/TsMuxerNode.kt`
+- `app/src/main/java/com/example/templei/feature/export/VideoEncoderNode.kt`
+- `app/src/main/java/com/example/templei/feature/export/AudioEncoderNode.kt`
+- `app/src/main/java/com/example/templei/ui/state/` additions for Screen 2 view state/events.
+
+## OBS-over-LAN implementation plan (realistic iteration count)
+Use small milestones and expect multiple back-and-forth cycles. A realistic path is **6 to 9 PRs** (or equivalent coding rounds), not one pass.
+
+1. **Contract + config pass (1 round)**
+   - Finalize endpoint schema, stream state enum, failure domain taxonomy, and Screen 2 configuration model.
+2. **Service/session pass (1 to 2 rounds)**
+   - Add foreground streaming service boundary and lifecycle-safe command channel from Screen 2.
+3. **Video path pass (1 round)**
+   - Camera frame path into H.264 encoder with stable timestamps and diagnostics.
+4. **Audio path pass (1 round)**
+   - Microphone ingest into AAC-LC encoder with A/V clock alignment decisions.
+5. **Mux + transport pass (1 to 2 rounds)**
+   - MPEG-TS packetization + SRT transport, endpoint handling, and reconnect policy.
+6. **OBS interoperability + tuning pass (1 to 2 rounds)**
+   - Validate with OBS Media Source settings, latency tuning, error recovery behavior, and user-facing status reporting in Screen 2.
+
+Risks that usually force extra back-and-forth:
+- Device-specific encoder quirks (color format, bitrate behavior, thermal throttling).
+- Audio/video drift under long sessions.
+- SRT library/platform integration details and reconnect edge cases.
+- Foreground service and permission behavior differences across Android versions.
+
