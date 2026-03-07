@@ -46,8 +46,7 @@ object TsMuxerNode {
             videoAccessUnitsIngested = 0
             audioAccessUnitsIngested = 0
             packetsDrained = 0
-            pendingVideoAccessUnits.clear()
-            pendingAudioAccessUnits.clear()
+            // Preserve pending access units so capture bootstrap emitted before prepare/start still flushes.
         }
         return result
     }
