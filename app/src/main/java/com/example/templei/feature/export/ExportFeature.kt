@@ -51,6 +51,11 @@ object ExportFeature {
     private var lastError: String = ""
     private var lastValidation: String = "Not validated"
     private var lastConnectionTest: String = "Not tested"
+    private var lastDiagnosticSummary: String = "diagnostics pending"
+    private var lastDiagnosticAtMs: Long = 0
+
+    private const val DIAGNOSTIC_REFRESH_INTERVAL_MS = 1_000L
+    private const val FRAME_BUDGET_US = 33_333L
 
     private val transportGateway: StreamTransportGateway = DefaultTransportGateway
 
@@ -85,6 +90,8 @@ object ExportFeature {
         lastError = ""
         lastValidation = "Reset to default OBS preset"
         lastConnectionTest = "Not tested"
+        lastDiagnosticSummary = "diagnostics pending"
+        lastDiagnosticAtMs = 0
         return reset
     }
 
@@ -130,6 +137,9 @@ object ExportFeature {
         }
 
         sessionState = SessionState.Starting
+        StreamPipelineMetrics.reset()
+        lastDiagnosticSummary = "diagnostics pending"
+        lastDiagnosticAtMs = 0
         val started = transportGateway.startStream(config.toEndpointSpec())
         return if (started.isSuccess) {
             sessionState = SessionState.Streaming
@@ -147,6 +157,8 @@ object ExportFeature {
         val stopped = transportGateway.stopStream()
         return if (stopped.isSuccess) {
             sessionState = SessionState.Idle
+            lastDiagnosticSummary = "diagnostics pending"
+            lastDiagnosticAtMs = 0
             StreamResult(state = sessionState)
         } else {
             sessionState = SessionState.Faulted
@@ -170,6 +182,7 @@ object ExportFeature {
 
     fun lastConnectionTest(): String = lastConnectionTest
 
+    fun pipelineMetricsSnapshot(): StreamPipelineMetrics.Snapshot = StreamPipelineMetrics.snapshot()
 
     fun interoperabilityStatus(config: ObsStreamConfig): String {
         val host = config.host.trim()
@@ -193,11 +206,13 @@ object ExportFeature {
         return when {
             sessionState != SessionState.Streaming -> "native runtimes loaded; ready to start"
             else -> {
+                val diagnostics = refreshDiagnosticsSnapshotIfDue()
                 "streaming health: mode=${config.streamMode.name} video(frames=${videoStats.framesEncoded}) " +
                     "audio(frames=${audioStats.framesEncoded}) mux(v=${muxStats.videoAccessUnitsIngested},a=${muxStats.audioAccessUnitsIngested}," +
                     "ts=${muxStats.packetsDrained},handed=${muxStats.bytesHandedToSrt},lastErr=${TsMuxerNode.lastIngestError()}) " +
                     "srt(sent=${srtStats.packetsSent},bytes=${srtStats.bytesSent},handed=${srtStats.bytesHandedToSrt},state=${srtStats.socketState}," +
-                    "last=${srtStats.lastSendResult},retries=${srtStats.reconnectAttempts},native=${srtStats.nativeStatsSnapshot})"
+                    "last=${srtStats.lastSendResult},retries=${srtStats.reconnectAttempts},native=${srtStats.nativeStatsSnapshot}) " +
+                    "diag{$diagnostics}"
             }
         }
     }
@@ -210,6 +225,17 @@ object ExportFeature {
         }
     }
 
+    private fun refreshDiagnosticsSnapshotIfDue(nowMs: Long = System.currentTimeMillis()): String {
+        if (nowMs - lastDiagnosticAtMs >= DIAGNOSTIC_REFRESH_INTERVAL_MS || lastDiagnosticSummary == "diagnostics pending") {
+            val snapshot = StreamPipelineMetrics.captureDiagnosticSnapshot(
+                frameBudgetUs = FRAME_BUDGET_US,
+                nowMs = nowMs,
+            )
+            lastDiagnosticSummary = snapshot.compactSummary()
+            lastDiagnosticAtMs = nowMs
+        }
+        return lastDiagnosticSummary
+    }
 
     private fun ObsStreamConfig.toEndpointSpec(): ObsEndpointSpec {
         return ObsEndpointSpec(
@@ -250,6 +276,15 @@ object ExportFeature {
     }
 
     private object DefaultTransportGateway : StreamTransportGateway {
+        private const val MUX_TO_SRT_QUEUE_CAPACITY = 256
+
+        private val packetQueueLock = Any()
+        private val muxToSrtQueue = ArrayDeque<ByteArray>()
+
+        @Volatile
+        private var sendLoopActive = false
+        private var senderThread: Thread? = null
+
         override fun isAvailable(): Boolean {
             return TsMuxerNode.isAvailable() && SrtTransportNode.isAvailable()
         }
@@ -257,34 +292,35 @@ object ExportFeature {
         override fun startStream(endpoint: ObsEndpointSpec): Result<Unit> {
             TsMuxerNode.resetRuntimeState()
             SrtTransportNode.resetRuntimeState()
-            val muxPrepared = TsMuxerNode.prepare()
+            stopSenderWorker()
+
+            val muxPrepared: Result<Unit> = TsMuxerNode.prepare()
             if (muxPrepared.isFailure) {
                 val reason = muxPrepared.exceptionOrNull()?.message ?: TsMuxerNode.availabilityMessage()
                 return Result.failure(IllegalStateException("mux prepare failed: $reason"))
             }
 
-            val connected = SrtTransportNode.connect(endpoint)
+            val connected: Result<Unit> = SrtTransportNode.connect(endpoint)
             if (connected.isFailure) {
                 val reason = connected.exceptionOrNull()?.message ?: SrtTransportNode.availabilityMessage()
                 return Result.failure(IllegalStateException("srt connect failed: $reason"))
             }
 
-            val sendingStarted = SrtTransportNode.startSending()
+            val sendingStarted: Result<Unit> = SrtTransportNode.startSending()
             if (sendingStarted.isFailure) {
                 val reason = sendingStarted.exceptionOrNull()?.message ?: SrtTransportNode.availabilityMessage()
                 return Result.failure(IllegalStateException("srt send-start failed: $reason"))
             }
 
+            startSenderWorker()
             TsMuxerNode.setPacketOutputListener { packet ->
-                val send = SrtTransportNode.sendPacket(packet)
-                if (send.isFailure) {
-                    Log.e(TAG, "mux->srt send failed: ${send.exceptionOrNull()?.message.orEmpty()}")
-                }
+                enqueueMuxPacket(packet)
             }
 
-            val muxStarted = TsMuxerNode.start()
+            val muxStarted: Result<Unit> = TsMuxerNode.start()
             if (muxStarted.isFailure) {
                 val reason = muxStarted.exceptionOrNull()?.message ?: TsMuxerNode.availabilityMessage()
+                stopSenderWorker()
                 return Result.failure(IllegalStateException("mux start failed: $reason"))
             }
 
@@ -293,11 +329,66 @@ object ExportFeature {
 
         override fun stopStream(): Result<Unit> {
             TsMuxerNode.setPacketOutputListener(null)
+            stopSenderWorker()
             SrtTransportNode.stopSending()
             TsMuxerNode.stop()
             TsMuxerNode.resetRuntimeState()
             SrtTransportNode.resetRuntimeState()
             return Result.success(Unit)
+        }
+
+        private fun enqueueMuxPacket(packet: ByteArray) {
+            synchronized(packetQueueLock) {
+                if (muxToSrtQueue.size >= MUX_TO_SRT_QUEUE_CAPACITY) {
+                    muxToSrtQueue.removeFirstOrNull()
+                    StreamPipelineMetrics.recordQueueDrop(muxToSrt = 1)
+                }
+                muxToSrtQueue.addLast(packet)
+                updateMuxToSrtDepth()
+            }
+        }
+
+        private fun startSenderWorker() {
+            stopSenderWorker()
+            sendLoopActive = true
+            senderThread = Thread {
+                while (sendLoopActive) {
+                    val packet: ByteArray? = synchronized(packetQueueLock) {
+                        muxToSrtQueue.removeFirstOrNull().also { updateMuxToSrtDepth() }
+                    }
+                    if (packet != null) {
+                        val send: Result<Unit> = SrtTransportNode.sendPacket(packet)
+                        if (send.isFailure) {
+                            Log.e(TAG, "mux->srt send failed: ${send.exceptionOrNull()?.message.orEmpty()}")
+                        }
+                    } else {
+                        Thread.sleep(2L)
+                    }
+                }
+            }.apply {
+                name = "TempleI-MuxToSrtRelay"
+                start()
+            }
+        }
+
+        private fun stopSenderWorker() {
+            sendLoopActive = false
+            senderThread?.join(300L)
+            senderThread = null
+            synchronized(packetQueueLock) {
+                muxToSrtQueue.clear()
+            }
+            updateMuxToSrtDepth()
+        }
+
+        private fun updateMuxToSrtDepth() {
+            val muxToSrtDepth: Int = synchronized(packetQueueLock) { muxToSrtQueue.size }
+            val snapshot = StreamPipelineMetrics.snapshot()
+            StreamPipelineMetrics.updateQueueDepths(
+                cameraToEncoder = snapshot.cameraToEncoderQueueDepth,
+                encoderToMux = snapshot.encoderToMuxQueueDepth,
+                muxToSrt = muxToSrtDepth,
+            )
         }
     }
 

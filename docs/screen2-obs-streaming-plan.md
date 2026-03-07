@@ -4,6 +4,8 @@ This plan keeps **Screen 1 camera behavior unchanged** and uses **Screen 2** as 
 
 ## Scope guardrails
 - Do not modify `Screen1Activity` or Screen 1 camera controls.
+- Keep camera preview/capture UI on Screen 1 only.
+- Keep Screen 2 as configuration + stream Start/Stop controls only (no camera preview UI).
 - Build Screen 2 as a stream orchestration/configuration flow.
 - Reword Screen 2 labels toward OBS/SRT terminology.
 
@@ -26,6 +28,10 @@ This plan keeps **Screen 1 camera behavior unchanged** and uses **Screen 2** as 
   - TransportFailure
   - ObsUnreachable
 
+
+## Stream mode scope
+- Supported stream path modes remain limited to: `FullAv`, `VideoOnly`, `AudioOnly`.
+- Do not add preview-only / encoder-only / local-sink / reduced-profile modes in this iteration.
 
 ## Current Screen 2 wiring status
 - Screen 2 buttons are now mapped to concrete OBS ingest workflow actions:
@@ -104,6 +110,12 @@ This plan keeps **Screen 1 camera behavior unchanged** and uses **Screen 2** as 
 - Validate and Start now prompt for host input when empty to reduce dead-end `host missing` flows.
 - Transport availability is now reported in endpoint test and Start path separately; Start transitions to `Faulted` only when native MPEG-TS + SRT transport is unavailable.
 
+
+
+## PR 5 validation closeout notes
+- Added/expanded unit coverage for diagnostics origin behavior (drop-priority, latency-over-budget, healthy-within-budget).
+- Confirmed Screen 2 remains config/control only while diagnostics are surfaced through status text (no camera preview UI added).
+- Environment limitation in this container: Android SDK path is missing, so Gradle Android tasks require `ANDROID_HOME`/`ANDROID_SDK_ROOT` or `local.properties` (`sdk.dir`).
 
 ## Native SRT dependency packaging note
 - If the app itself publishes an SRT stream to OBS, Android must include native SRT support (`libsrt`) because `MediaMuxer` does not provide SRT transport.

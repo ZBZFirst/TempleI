@@ -95,6 +95,9 @@ Use the entries below for Obsidian graph/linking. Paths are repo-relative and in
 ## Current implementation snapshot (as of latest reviewed commit)
 - `Screen1Activity` + `CameraFeature` currently provide camera preview, picture capture, and video recording (with microphone) and persist media into `Pictures/TempleI` and `Movies/TempleI`.
 - `Screen2Activity` and `activity_screen2.xml` now implement OBS SRT ingest configuration and control wiring (host/port edit, validate/test, preset reset, URL display, profile toggle, start/stop), and bind to a foreground-capable stream session service boundary.
+- Screen responsibility split is strict:
+  - Screen 1 hosts camera preview/capture controls.
+  - Screen 2 hosts configuration + start/stop stream commands only, with **no camera preview UI**.
 - `feature/export/ExportFeature.kt` now holds Screen 2 config persistence, validation, session state, OBS URL generation, and a transport gateway that now routes through TS mux/SRT node contracts; Rounds 3-6 add capture-path coordination, video/audio/mux/transport endpoint contracts, and interop diagnostics.
 
 ## File structure snapshot and update targets
@@ -159,6 +162,11 @@ Risks that usually force extra back-and-forth:
   - Validate/Start now prompt for host when empty.
   - Host/port validation keeps session in `Idle` instead of forcing immediate `Faulted`.
   - `Faulted` is now reserved for attempted Start when native transport is unavailable.
+- PR 1 docs alignment completed: screen ownership is explicitly split (Screen 1 camera preview/capture; Screen 2 config + start/stop only) and stream mode scope is explicitly limited to `FullAv` / `VideoOnly` / `AudioOnly`.
+- PR 2 metrics foundation completed: added shared stream pipeline metrics model and initial stage instrumentation hooks (camera arrival, encoder queue/output, mux ingest/drain, srt send attempts) without changing runtime control flow.
+- PR 3 bounded-queue pass completed: introduced non-blocking bounded handoff queues for camera->encoder, encoder->mux, and mux->srt with freshness-first drop behavior and metrics-linked queue depth/drop tracking.
+- PR 4 backpressure reporting pass completed: added periodic structured diagnostics snapshots with explicit first-origin backpressure classification and surfaced origin/latency/queue/drop summary in Screen 2 runtime status output.
+- PR 5 validation/docs closeout completed: expanded metrics unit coverage for drop/latency/healthy-origin cases, refreshed progress line items, and recorded Android SDK limitation for local Gradle execution in this environment.
 
 
 ## Round-by-round implementation checklist
@@ -236,14 +244,13 @@ Implement the following in small PR increments; keep variable declarations expli
    - Record per-stage drop counters and expose in diagnostics.
    - Document drop policy priority (freshness-first for real-time path).
 
-4. **Mode matrix for bottleneck isolation**
-   - Add selectable execution modes:
-     - preview only
-     - preview + encoder only
-     - preview + encoder + local sink
-     - preview + encoder + SRT send
-     - reduced profile (720p / 30fps / lower bitrate)
-   - Persist chosen mode with existing Screen 2 configuration storage.
+4. **Stream mode scope (current product direction)**
+   - Keep stream mode support limited to the existing three modes only:
+     - `FullAv`
+     - `VideoOnly`
+     - `AudioOnly`
+   - Continue persisting the selected mode with existing Screen 2 configuration storage.
+   - Do not add preview-only/encoder-only/local-sink/reduced-profile modes in this iteration.
 
 5. **Stage-origin backpressure reporting**
    - Add periodic structured diagnostic snapshots for:
@@ -256,3 +263,44 @@ Implement the following in small PR increments; keep variable declarations expli
 6. **Validation and closeout**
    - Run static/unit validation where environment allows.
    - If Android SDK is unavailable, record environment limitation and include static verification summary.
+
+
+### Suggested PR slicing for the current fix path
+Use this slicing to keep changes reviewable and to avoid coupling docs/scope updates with runtime refactors:
+
+Progress status:
+- [COMPLETED] PR 1 — Scope + ownership docs alignment
+- [COMPLETED] PR 2 — Metrics model foundation
+- [COMPLETED] PR 3 — Bounded queue boundaries
+- [COMPLETED] PR 4 — Backpressure origin reporting to Screen 2
+- [COMPLETED] PR 5 — Validation + docs closeout
+
+1. **PR 1 — Scope + ownership docs alignment**
+   - Confirm Screen 1 vs Screen 2 responsibility language is explicit and consistent.
+   - Ensure stream mode scope is documented as `FullAv`, `VideoOnly`, `AudioOnly` only.
+
+2. **PR 2 — Metrics model foundation**
+   - Add a dedicated diagnostics/metrics holder for stage timings, queue depths, and drop counters.
+   - Keep this PR non-invasive (data model + wiring hooks only, no behavior changes).
+
+3. **PR 3 — Bounded queue boundaries**
+   - Introduce bounded non-blocking queue handoffs between camera->encoder, encoder->mux, and mux->srt paths.
+   - Add explicit freshness-first drop policy + counters when queues are full.
+
+4. **PR 4 — Backpressure origin reporting to Screen 2**
+   - Add periodic structured snapshots and first-origin threshold reporting.
+   - Surface latest origin summary in existing Screen 2 status output (without adding preview UI).
+
+5. **PR 5 — Validation + docs closeout**
+   - Add/update tests for queue/drop behavior and diagnostics summaries where feasible.
+   - Refresh docs/status notes and clearly report any Android SDK environment limitations encountered during checks.
+
+### PR 5 closeout commentary and line items
+- Validation line items completed:
+  - Expanded unit test scenarios for backpressure-origin detection, including drop-priority, latency-over-budget, and healthy-within-budget paths.
+  - Re-ran available local checks and documented environment constraints for Android Gradle tasks.
+- Environment limitation noted:
+  - Android SDK path is unavailable in this container, so Gradle Android tasks require `ANDROID_HOME`/`ANDROID_SDK_ROOT` or `local.properties` (`sdk.dir`) to execute.
+- Next actionable line items (post PR 5):
+  - Wire native mux/srt runtimes and update availability gates from pending -> ready when libs load successfully.
+  - Add end-to-end OBS ingest validation once runtime libraries are available on device/CI.
