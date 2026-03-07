@@ -95,6 +95,7 @@ This plan keeps **Screen 1 camera behavior unchanged** and uses **Screen 2** as 
 
 
 ## Latest completion notes
+- Round 6 interop diagnostics are now surfaced in Screen 2 status output so users can see whether OBS host/port is valid and whether native mpegts+srt runtime is still pending.
 - Round 5 mux/transport contract is now wired: `ExportFeature` gateway routes start/stop through `TsMuxerNode` and `SrtTransportNode` using `ObsEndpointSpec` URL contract.
 - Round 4 audio-path contract is now wired: `CaptureCoordinator` configures/starts `AudioEncoderNode` and stops it during session teardown to keep A/V path orchestration paired.
 - Round 3 video-path contract is now wired: `StreamSessionService` calls `CaptureCoordinator`, which checks camera preview readiness and starts/stops video/audio encoder nodes before transport start/stop.

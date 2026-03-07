@@ -37,12 +37,14 @@
     <string name="obs_validation_placeholder">Validation: not run</string>
     <string name="obs_connection_placeholder">Last Test: not run</string>
     <string name="obs_last_error_placeholder">Last Error: none</string>
+    <string name="obs_interop_placeholder">Interop: not evaluated</string>
 
     <string name="obs_setup_summary_value">Media Source\nLocal File = Off\nInput = %1$s\nInput Format = mpegts\nTransport = srt\nProfile = %2$s</string>
     <string name="obs_session_state_value">Session State: %1$s</string>
     <string name="obs_validation_value">Validation: %1$s</string>
     <string name="obs_connection_value">Last Test: %1$s</string>
     <string name="obs_last_error_value">Last Error: %1$s</string>
+    <string name="obs_interop_value">Interop: %1$s</string>
     <string name="obs_no_error">none</string>
 
     <string name="obs_edit_host_title">Edit OBS Host/IP</string>

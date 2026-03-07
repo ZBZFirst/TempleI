@@ -28,6 +28,7 @@ class Screen2Activity : ComponentActivity() {
     private lateinit var validationResultText: TextView
     private lateinit var connectionResultText: TextView
     private lateinit var lastErrorText: TextView
+    private lateinit var interopStatusText: TextView
 
     private var currentConfig = ExportFeature.ObsStreamConfig()
     private var streamSessionBinder: StreamSessionService.LocalBinder? = null
@@ -75,6 +76,7 @@ class Screen2Activity : ComponentActivity() {
         validationResultText = findViewById(R.id.validationResultText)
         connectionResultText = findViewById(R.id.connectionResultText)
         lastErrorText = findViewById(R.id.lastErrorText)
+        interopStatusText = findViewById(R.id.interopStatusText)
     }
 
     private fun bindButtons() {
@@ -211,6 +213,7 @@ class Screen2Activity : ComponentActivity() {
         val validationMessage = ExportFeature.lastValidation()
         val connectionMessage = ExportFeature.lastConnectionTest()
         val errorText = ExportFeature.lastError().ifBlank { getString(R.string.obs_no_error) }
+        val interopText = ExportFeature.interoperabilityStatus(currentConfig)
 
         obsSetupSummaryText.text = getString(
             R.string.obs_setup_summary_value,
@@ -221,5 +224,6 @@ class Screen2Activity : ComponentActivity() {
         validationResultText.text = getString(R.string.obs_validation_value, validationMessage)
         connectionResultText.text = getString(R.string.obs_connection_value, connectionMessage)
         lastErrorText.text = getString(R.string.obs_last_error_value, errorText)
+        interopStatusText.text = getString(R.string.obs_interop_value, interopText)
     }
 }

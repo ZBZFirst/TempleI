@@ -95,7 +95,7 @@ Use the entries below for Obsidian graph/linking. Paths are repo-relative and in
 ## Current implementation snapshot (as of latest reviewed commit)
 - `Screen1Activity` + `CameraFeature` currently provide camera preview, picture capture, and video recording (with microphone) and persist media into `Pictures/TempleI` and `Movies/TempleI`.
 - `Screen2Activity` and `activity_screen2.xml` now implement OBS SRT ingest configuration and control wiring (host/port edit, validate/test, preset reset, URL display, profile toggle, start/stop), and bind to a foreground-capable stream session service boundary.
-- `feature/export/ExportFeature.kt` now holds Screen 2 config persistence, validation, session state, OBS URL generation, and a transport gateway that now routes through TS mux/SRT node contracts; Rounds 3-5 add capture-path coordination plus video/audio/mux/transport endpoint contracts.
+- `feature/export/ExportFeature.kt` now holds Screen 2 config persistence, validation, session state, OBS URL generation, and a transport gateway that now routes through TS mux/SRT node contracts; Rounds 3-6 add capture-path coordination, video/audio/mux/transport endpoint contracts, and interop diagnostics.
 
 ## File structure snapshot and update targets
 Use this as the practical "what exists now" map before editing:
@@ -147,6 +147,7 @@ Risks that usually force extra back-and-forth:
 - Foreground service and permission behavior differences across Android versions.
 
 ## Completed work log (most recent first)
+- Round 6 interoperability/tuning pass added: Screen 2 now surfaces explicit OBS interoperability readiness diagnostics tied to host/port validity and TS/SRT runtime availability.
 - Round 5 mux/transport pass added: `TsMuxerNode` + `SrtTransportNode` + `ObsEndpointSpec`/`StreamState` contracts are now wired through `ExportFeature` gateway start/stop flow.
 - Round 4 audio-path pass added: `AudioEncoderNode` contract and capture coordinator audio gating are now included before Screen 2 transport start.
 - Round 3 video-path pass added: `CaptureCoordinator` + `VideoEncoderNode` contracts now gate Screen 2 Start flow and verify camera preview readiness before transport start.
@@ -166,4 +167,4 @@ Risks that usually force extra back-and-forth:
 - [COMPLETED] Round 3: Video path pass (camera encoded output routing into streaming pipeline).
 - [COMPLETED] Round 4: Audio path pass (mic ingest + A/V clock alignment for stream path).
 - [COMPLETED] Round 5: MPEG-TS mux + SRT transport pass (native mux/sender integration behind transport boundary).
-- [ ] Round 6: OBS interoperability/tuning pass (latency, reconnect behavior, user-facing diagnostics).
+- [COMPLETED] Round 6: OBS interoperability/tuning pass (latency, reconnect behavior, user-facing diagnostics).

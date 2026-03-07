@@ -164,6 +164,24 @@ object ExportFeature {
 
     fun lastConnectionTest(): String = lastConnectionTest
 
+
+    fun interoperabilityStatus(config: ObsStreamConfig): String {
+        val host = config.host.trim()
+        if (host.isEmpty()) {
+            return "set OBS host and port, then copy Input into OBS Media Source"
+        }
+
+        if (config.port !in 1..65535) {
+            return "set a valid port (1-65535) for OBS listener"
+        }
+
+        if (!TsMuxerNode.isAvailable() || !SrtTransportNode.isAvailable()) {
+            return "UI/config ready; waiting for native mpegts+srt runtime"
+        }
+
+        return "ready for OBS listener ingest"
+    }
+
     fun nextProfile(current: String): String {
         return if (current == PROFILE_BALANCED) PROFILE_LOW_LATENCY else PROFILE_BALANCED
     }

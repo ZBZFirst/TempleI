@@ -254,6 +254,13 @@
                         android:layout_height="wrap_content"
                         android:layout_marginTop="8dp"
                         android:text="@string/obs_last_error_placeholder" />
+
+                    <TextView
+                        android:id="@+id/interopStatusText"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:text="@string/obs_interop_placeholder" />
                 </LinearLayout>
 
             </LinearLayout>
