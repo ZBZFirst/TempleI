@@ -4,6 +4,7 @@ import android.content.ContentValues
 import android.content.Context
 import android.graphics.ImageFormat
 import android.provider.MediaStore
+import android.util.Log
 import android.util.Size
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
@@ -33,6 +34,7 @@ import java.util.concurrent.Executors
  * TODO: Move callback-driven APIs to a dedicated ViewModel state flow when Screen 1 exits shell stage.
  */
 object CameraFeature {
+    private const val TAG = "TempleI-CameraFeature"
     enum class LensOption {
         BACK,
         FRONT,
@@ -60,6 +62,9 @@ object CameraFeature {
     private var frameOutputListener: ((FramePacket) -> Unit)? = null
 
     private val analysisExecutor = Executors.newSingleThreadExecutor()
+    private var unexpectedAnalysisFrameCount = 0L
+    private var analysisFrameWidth = 0
+    private var analysisFrameHeight = 0
 
     fun selectedLens(): LensOption = selectedLensOption
 
@@ -90,6 +95,9 @@ object CameraFeature {
 
         if (!provider.hasCamera(selectedLensOption.toSelector())) {
             isBound = false
+            unexpectedAnalysisFrameCount = 0
+            analysisFrameWidth = 0
+            analysisFrameHeight = 0
             onUnavailable()
             return
         }
@@ -120,6 +128,9 @@ object CameraFeature {
             }
 
         provider.unbindAll()
+        unexpectedAnalysisFrameCount = 0
+        analysisFrameWidth = 0
+        analysisFrameHeight = 0
         provider.bindToLifecycle(
             CameraSessionLifecycleOwner,
             selectedLensOption.toSelector(),
@@ -168,6 +179,9 @@ object CameraFeature {
             }
 
         provider.unbindAll()
+        unexpectedAnalysisFrameCount = 0
+        analysisFrameWidth = 0
+        analysisFrameHeight = 0
         provider.bindToLifecycle(
             CameraSessionLifecycleOwner,
             selectedLensOption.toSelector(),
@@ -192,6 +206,9 @@ object CameraFeature {
         videoCapture = null
         imageAnalysis = null
         isBound = false
+        unexpectedAnalysisFrameCount = 0
+        analysisFrameWidth = 0
+        analysisFrameHeight = 0
     }
 
     fun takePicture(
@@ -313,6 +330,17 @@ object CameraFeature {
             if (imageProxy.format != ImageFormat.YUV_420_888) {
                 return
             }
+
+            if (analysisFrameWidth != imageProxy.width || analysisFrameHeight != imageProxy.height) {
+                analysisFrameWidth = imageProxy.width
+                analysisFrameHeight = imageProxy.height
+                unexpectedAnalysisFrameCount += 1
+                Log.w(
+                    TAG,
+                    "analysis frame size observed=${imageProxy.width}x${imageProxy.height} changeCount=$unexpectedAnalysisFrameCount",
+                )
+            }
+
             val listener = frameOutputListener ?: return
             val i420 = imageProxy.toI420ByteArray() ?: return
             listener(
@@ -323,6 +351,8 @@ object CameraFeature {
                     i420Data = i420,
                 ),
             )
+        } catch (throwable: Throwable) {
+            Log.e(TAG, "analysis frame handling failed: ${throwable.message.orEmpty()}", throwable)
         } finally {
             imageProxy.close()
         }

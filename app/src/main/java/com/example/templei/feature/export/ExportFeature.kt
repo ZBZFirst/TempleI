@@ -209,7 +209,7 @@ object ExportFeature {
                 val diagnostics = refreshDiagnosticsSnapshotIfDue()
                 "streaming health: mode=${config.streamMode.name} video(frames=${videoStats.framesEncoded}) " +
                     "audio(frames=${audioStats.framesEncoded}) mux(v=${muxStats.videoAccessUnitsIngested},a=${muxStats.audioAccessUnitsIngested}," +
-                    "ts=${muxStats.packetsDrained},handed=${muxStats.bytesHandedToSrt},lastErr=${TsMuxerNode.lastIngestError()}) " +
+                    "ts=${muxStats.packetsDrained},handed=${muxStats.bytesHandedToSrt},startup=${muxStats.startupState},audioSuppressed=${muxStats.audioAccessUnitsSuppressed},lastErr=${TsMuxerNode.lastIngestError()}) " +
                     "srt(sent=${srtStats.packetsSent},bytes=${srtStats.bytesSent},handed=${srtStats.bytesHandedToSrt},state=${srtStats.socketState}," +
                     "last=${srtStats.lastSendResult},retries=${srtStats.reconnectAttempts},native=${srtStats.nativeStatsSnapshot}) " +
                     "diag{$diagnostics}"
