@@ -1,5 +1,9 @@
 package com.example.templei.feature.export
 
+import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledExecutorService
+import java.util.concurrent.TimeUnit
+
 /**
  * Audio path node for Screen 2 streaming orchestration.
  *
@@ -27,9 +31,15 @@ object AudioEncoderNode {
         val trackIndex: Int = 1,
     )
 
+    // Placeholder AAC-LC ADTS silent-like frame to keep transport active until microphone path lands.
+    private val syntheticAacFrame = byteArrayOf(
+        0xFF.toByte(), 0xF1.toByte(), 0x50.toByte(), 0x40.toByte(), 0x01.toByte(), 0x7F.toByte(), 0xFC.toByte(),
+    )
+
     private var nodeState: NodeState = NodeState.Idle
     private var lastError: String = ""
     private var outputListener: ((EncodedAccessUnit) -> Unit)? = null
+    private var scheduler: ScheduledExecutorService? = null
 
     fun configure(config: EncoderConfig): Result<Unit> {
         if (config.sampleRate <= 0 || config.channelCount <= 0 || config.bitrate <= 0) {
@@ -55,11 +65,13 @@ object AudioEncoderNode {
         }
 
         nodeState = NodeState.Running
-        emitCodecBootstrapSample()
+        startSyntheticEmissionLoop()
         return Result.success(Unit)
     }
 
     fun stop() {
+        scheduler?.shutdownNow()
+        scheduler = null
         nodeState = NodeState.Idle
         lastError = ""
     }
@@ -68,12 +80,27 @@ object AudioEncoderNode {
 
     fun error(): String = lastError
 
-    private fun emitCodecBootstrapSample() {
-        val sample = EncodedAccessUnit(
-            data = byteArrayOf(0x12, 0x10),
-            presentationTimeUs = System.nanoTime() / 1_000,
-            flags = 1,
+    private fun startSyntheticEmissionLoop() {
+        scheduler?.shutdownNow()
+        val executor = Executors.newSingleThreadScheduledExecutor()
+        scheduler = executor
+
+        // Keep emitting placeholder AUs so mux/SRT counters keep moving during integration.
+        executor.scheduleAtFixedRate(
+            {
+                if (nodeState != NodeState.Running) {
+                    return@scheduleAtFixedRate
+                }
+                val sample = EncodedAccessUnit(
+                    data = syntheticAacFrame,
+                    presentationTimeUs = System.nanoTime() / 1_000,
+                    flags = 1,
+                )
+                outputListener?.invoke(sample)
+            },
+            0,
+            20,
+            TimeUnit.MILLISECONDS,
         )
-        outputListener?.invoke(sample)
     }
 }
