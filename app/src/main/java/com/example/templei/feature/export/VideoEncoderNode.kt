@@ -43,6 +43,7 @@ object VideoEncoderNode {
     private var outputListener: ((EncodedAccessUnit) -> Unit)? = null
     private var activeConfig: EncoderConfig = EncoderConfig()
     private var codec: MediaCodec? = null
+    private var codecConfigAnnexB: ByteArray = ByteArray(0)
     private var framesEncoded: Long = 0
     private var firstOutputLogs = 0
     private var firstIdrSeen = false
@@ -127,6 +128,7 @@ object VideoEncoderNode {
         runCatching { codec?.stop() }
         runCatching { codec?.release() }
         codec = null
+        codecConfigAnnexB = ByteArray(0)
         framesEncoded = 0
         firstOutputLogs = 0
         firstIdrSeen = false
@@ -157,19 +159,35 @@ object VideoEncoderNode {
                             outputBuffer.limit(bufferInfo.offset + bufferInfo.size)
                             outputBuffer.get(accessUnit)
 
+                            if ((bufferInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG) != 0) {
+                                activeCodec.releaseOutputBuffer(outputIndex, false)
+                                continue
+                            }
+
+                            val normalizedAccessUnit = normalizeToAnnexB(accessUnit)
+                            val keyFrame = (bufferInfo.flags and MediaCodec.BUFFER_FLAG_KEY_FRAME) != 0
+                            val accessUnitWithConfig = if (
+                                keyFrame &&
+                                codecConfigAnnexB.isNotEmpty() &&
+                                (!containsNalType(normalizedAccessUnit, 7) || !containsNalType(normalizedAccessUnit, 8))
+                            ) {
+                                codecConfigAnnexB + normalizedAccessUnit
+                            } else {
+                                normalizedAccessUnit
+                            }
+
                             outputListener?.invoke(
                                 EncodedAccessUnit(
-                                    data = accessUnit,
+                                    data = accessUnitWithConfig,
                                     presentationTimeUs = bufferInfo.presentationTimeUs,
                                     flags = bufferInfo.flags,
                                 ),
                             )
                             framesEncoded += 1
-                            val keyFrame = (bufferInfo.flags and MediaCodec.BUFFER_FLAG_KEY_FRAME) != 0
-                            val annexB = isAnnexB(accessUnit)
-                            val containsSps = containsNalType(accessUnit, 7)
-                            val containsPps = containsNalType(accessUnit, 8)
-                            val containsIdr = containsNalType(accessUnit, 5)
+                            val annexB = isAnnexB(accessUnitWithConfig)
+                            val containsSps = containsNalType(accessUnitWithConfig, 7)
+                            val containsPps = containsNalType(accessUnitWithConfig, 8)
+                            val containsIdr = containsNalType(accessUnitWithConfig, 5)
                             if (containsSps) spsSeen = true
                             if (containsPps) ppsSeen = true
                             if (containsIdr && !firstIdrSeen) {
@@ -179,8 +197,8 @@ object VideoEncoderNode {
                             if (firstOutputLogs < 5) {
                                 Log.i(
                                     TAG,
-                                    "h264-buffer[${firstOutputLogs + 1}] size=${bufferInfo.size} flags=${bufferInfo.flags} " +
-                                        "key=$keyFrame annexB=$annexB first16=${toHex(accessUnit, 16)}",
+                                    "h264-buffer[${firstOutputLogs + 1}] size=${accessUnitWithConfig.size} flags=${bufferInfo.flags} " +
+                                        "key=$keyFrame annexB=$annexB first16=${toHex(accessUnitWithConfig, 16)}",
                                 )
                                 firstOutputLogs += 1
                             }
@@ -199,6 +217,7 @@ object VideoEncoderNode {
         if (configPayload.isEmpty()) {
             return
         }
+        codecConfigAnnexB = configPayload
         outputListener?.invoke(
             EncodedAccessUnit(
                 data = configPayload,
@@ -240,6 +259,47 @@ object VideoEncoderNode {
     private fun isAnnexB(data: ByteArray): Boolean {
         if (data.size < 4) return false
         return (data[0] == 0.toByte() && data[1] == 0.toByte() && data[2] == 1.toByte()) || startsWithStartCode(data)
+    }
+
+    private fun normalizeToAnnexB(data: ByteArray): ByteArray {
+        if (isAnnexB(data)) {
+            return data
+        }
+
+        var offset = 0
+        val chunks = ArrayList<ByteArray>()
+        while (offset + 4 <= data.size) {
+            val nalLen =
+                ((data[offset].toInt() and 0xFF) shl 24) or
+                    ((data[offset + 1].toInt() and 0xFF) shl 16) or
+                    ((data[offset + 2].toInt() and 0xFF) shl 8) or
+                    (data[offset + 3].toInt() and 0xFF)
+            offset += 4
+            if (nalLen <= 0 || offset + nalLen > data.size) {
+                return data
+            }
+            val nal = ByteArray(nalLen + 4)
+            nal[0] = 0x00
+            nal[1] = 0x00
+            nal[2] = 0x00
+            nal[3] = 0x01
+            System.arraycopy(data, offset, nal, 4, nalLen)
+            chunks += nal
+            offset += nalLen
+        }
+
+        if (chunks.isEmpty() || offset != data.size) {
+            return data
+        }
+
+        val total = chunks.sumOf { it.size }
+        val merged = ByteArray(total)
+        var writeOffset = 0
+        chunks.forEach { chunk ->
+            System.arraycopy(chunk, 0, merged, writeOffset, chunk.size)
+            writeOffset += chunk.size
+        }
+        return merged
     }
 
     private fun containsNalType(data: ByteArray, nalType: Int): Boolean {
