@@ -9,6 +9,12 @@ android {
     compileSdk = 34
 
     defaultConfig {
+        externalNativeBuild {
+            cmake {
+                cppFlags += "-std=c++17"
+            }
+        }
+
         applicationId = "com.example.templei"
         minSdk = 34
         targetSdk = 34
@@ -36,6 +42,13 @@ android {
     }
     buildFeatures {
         compose = true
+    }
+
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
+        }
     }
 }
 
