@@ -36,12 +36,27 @@ object SrtTransportNode {
             return Result.failure(IllegalArgumentException("host missing"))
         }
 
-        val connectResult = resolved.getOrThrow().connect(endpoint)
-        connected = connectResult.isSuccess
-        if (!connected) {
-            sending = false
+        val retryBudgetMs = listOf(0L, 150L, 400L)
+        val runtimeInstance = resolved.getOrThrow()
+        var lastError: Throwable = IllegalStateException("sender unavailable")
+
+        for (delayMs in retryBudgetMs) {
+            if (delayMs > 0) {
+                Thread.sleep(delayMs)
+            }
+
+            val connectResult = runtimeInstance.connect(endpoint)
+            if (connectResult.isSuccess) {
+                connected = true
+                sending = false
+                return Result.success(Unit)
+            }
+            lastError = connectResult.exceptionOrNull() ?: lastError
         }
-        return connectResult
+
+        connected = false
+        sending = false
+        return Result.failure(lastError)
     }
 
     fun startSending(): Result<Unit> {
@@ -57,6 +72,23 @@ object SrtTransportNode {
         val startResult = resolved.getOrThrow().startSending()
         sending = startResult.isSuccess
         return startResult
+    }
+
+    fun sendPacket(packet: ByteArray): Result<Unit> {
+        if (!sending) {
+            return Result.failure(IllegalStateException("transport not sending"))
+        }
+
+        if (packet.isEmpty()) {
+            return Result.success(Unit)
+        }
+
+        val resolved = resolveRuntime()
+        if (resolved.isFailure) {
+            return Result.failure(resolved.exceptionOrNull() ?: IllegalStateException("sender unavailable"))
+        }
+
+        return resolved.getOrThrow().sendPacket(packet)
     }
 
     fun stopSending() {
@@ -101,7 +133,7 @@ object SrtTransportNode {
     private fun loadNativeRuntime(): RuntimeBinding {
         return runCatching {
             System.loadLibrary(SRT_NATIVE_LIBRARY)
-            RuntimeBinding.Loaded(NoOpNativeRuntime)
+            RuntimeBinding.Loaded(JniSrtRuntime)
         }.getOrElse {
             RuntimeBinding.Unavailable("native srt runtime pending (missing $SRT_NATIVE_LIBRARY)")
         }
@@ -110,6 +142,7 @@ object SrtTransportNode {
     internal interface Runtime {
         fun connect(endpoint: ObsEndpointSpec): Result<Unit>
         fun startSending(): Result<Unit>
+        fun sendPacket(packet: ByteArray): Result<Unit>
         fun stopSending()
     }
 
@@ -120,13 +153,35 @@ object SrtTransportNode {
     }
 
     /**
-     * Placeholder binding while JNI entry points are introduced.
+     * JNI-backed runtime adapter while native sender internals are integrated.
      */
-    private object NoOpNativeRuntime : Runtime {
-        override fun connect(endpoint: ObsEndpointSpec): Result<Unit> = Result.success(Unit)
+    private object JniSrtRuntime : Runtime {
+        override fun connect(endpoint: ObsEndpointSpec): Result<Unit> {
+            return if (SrtNativeBridge.nativeConnect(endpoint.host, endpoint.port, endpoint.latencyMs, endpoint.mode)) {
+                Result.success(Unit)
+            } else {
+                Result.failure(IllegalStateException(SrtNativeBridge.nativeLastError().ifBlank { "native srt connect failed" }))
+            }
+        }
 
-        override fun startSending(): Result<Unit> = Result.success(Unit)
+        override fun startSending(): Result<Unit> {
+            return if (SrtNativeBridge.nativeStartSending()) {
+                Result.success(Unit)
+            } else {
+                Result.failure(IllegalStateException(SrtNativeBridge.nativeLastError().ifBlank { "native srt start failed" }))
+            }
+        }
 
-        override fun stopSending() = Unit
+        override fun sendPacket(packet: ByteArray): Result<Unit> {
+            return if (SrtNativeBridge.nativeSendPacket(packet)) {
+                Result.success(Unit)
+            } else {
+                Result.failure(IllegalStateException(SrtNativeBridge.nativeLastError().ifBlank { "native srt send failed" }))
+            }
+        }
+
+        override fun stopSending() {
+            SrtNativeBridge.nativeStopSending()
+        }
     }
 }

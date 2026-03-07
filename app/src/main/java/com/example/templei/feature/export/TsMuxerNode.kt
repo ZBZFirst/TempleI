@@ -11,6 +11,7 @@ object TsMuxerNode {
 
     private var started = false
     private var runtime: RuntimeBinding = RuntimeBinding.Uninitialized
+    private var packetOutputListener: ((ByteArray) -> Unit)? = null
 
     /**
      * Probe for runtime availability once and cache the result.
@@ -24,6 +25,10 @@ object TsMuxerNode {
         } else {
             resolved.exceptionOrNull()?.message ?: "native mux path unavailable"
         }
+    }
+
+    fun setPacketOutputListener(listener: ((ByteArray) -> Unit)?) {
+        packetOutputListener = listener
     }
 
     fun prepare(): Result<Unit> {
@@ -47,11 +52,50 @@ object TsMuxerNode {
         return startResult
     }
 
+    fun ingestVideo(accessUnit: VideoEncoderNode.EncodedAccessUnit): Result<Unit> {
+        if (!started) {
+            return Result.failure(IllegalStateException("mux not started"))
+        }
+
+        val resolved = resolveRuntime()
+        if (resolved.isFailure) {
+            return Result.failure(resolved.exceptionOrNull() ?: IllegalStateException("native mux path unavailable"))
+        }
+
+        val ingestResult = resolved.getOrThrow().ingestVideo(accessUnit)
+        if (ingestResult.isFailure) {
+            return ingestResult
+        }
+
+        drainPacketToOutput()
+        return Result.success(Unit)
+    }
+
+    fun ingestAudio(accessUnit: AudioEncoderNode.EncodedAccessUnit): Result<Unit> {
+        if (!started) {
+            return Result.failure(IllegalStateException("mux not started"))
+        }
+
+        val resolved = resolveRuntime()
+        if (resolved.isFailure) {
+            return Result.failure(resolved.exceptionOrNull() ?: IllegalStateException("native mux path unavailable"))
+        }
+
+        val ingestResult = resolved.getOrThrow().ingestAudio(accessUnit)
+        if (ingestResult.isFailure) {
+            return ingestResult
+        }
+
+        drainPacketToOutput()
+        return Result.success(Unit)
+    }
+
     fun stop() {
         if (started) {
             resolveRuntime().onSuccess { it.stop() }
         }
         started = false
+        packetOutputListener = null
     }
 
     fun isStarted(): Boolean = started
@@ -65,6 +109,13 @@ object TsMuxerNode {
             else -> RuntimeBinding.Loaded(testRuntime)
         }
         started = false
+    }
+
+    private fun drainPacketToOutput() {
+        val packet = resolveRuntime().getOrNull()?.drainPacket() ?: return
+        if (packet.isNotEmpty()) {
+            packetOutputListener?.invoke(packet)
+        }
     }
 
     private fun resolveRuntime(): Result<Runtime> {
@@ -87,7 +138,7 @@ object TsMuxerNode {
     private fun loadNativeRuntime(): RuntimeBinding {
         return runCatching {
             System.loadLibrary(MUX_NATIVE_LIBRARY)
-            RuntimeBinding.Loaded(NoOpNativeRuntime)
+            RuntimeBinding.Loaded(JniMuxRuntime)
         }.getOrElse {
             RuntimeBinding.Unavailable("native mux runtime pending (missing $MUX_NATIVE_LIBRARY)")
         }
@@ -97,6 +148,9 @@ object TsMuxerNode {
         fun prepare(): Result<Unit>
         fun start(): Result<Unit>
         fun stop()
+        fun ingestVideo(accessUnit: VideoEncoderNode.EncodedAccessUnit): Result<Unit>
+        fun ingestAudio(accessUnit: AudioEncoderNode.EncodedAccessUnit): Result<Unit>
+        fun drainPacket(): ByteArray
     }
 
     private sealed interface RuntimeBinding {
@@ -106,13 +160,59 @@ object TsMuxerNode {
     }
 
     /**
-     * Placeholder binding while JNI entry points are introduced.
+     * JNI-backed runtime adapter while native mux internals are integrated.
      */
-    private object NoOpNativeRuntime : Runtime {
-        override fun prepare(): Result<Unit> = Result.success(Unit)
+    private object JniMuxRuntime : Runtime {
+        override fun prepare(): Result<Unit> {
+            return if (TsMuxNativeBridge.nativePrepare()) {
+                Result.success(Unit)
+            } else {
+                Result.failure(IllegalStateException(TsMuxNativeBridge.nativeLastError().ifBlank { "native mux prepare failed" }))
+            }
+        }
 
-        override fun start(): Result<Unit> = Result.success(Unit)
+        override fun start(): Result<Unit> {
+            return if (TsMuxNativeBridge.nativeStart()) {
+                Result.success(Unit)
+            } else {
+                Result.failure(IllegalStateException(TsMuxNativeBridge.nativeLastError().ifBlank { "native mux start failed" }))
+            }
+        }
 
-        override fun stop() = Unit
+        override fun stop() {
+            TsMuxNativeBridge.nativeStop()
+        }
+
+        override fun ingestVideo(accessUnit: VideoEncoderNode.EncodedAccessUnit): Result<Unit> {
+            return if (TsMuxNativeBridge.nativeIngestVideo(
+                    accessUnit.data,
+                    accessUnit.presentationTimeUs,
+                    accessUnit.flags,
+                    accessUnit.trackIndex,
+                )
+            ) {
+                Result.success(Unit)
+            } else {
+                Result.failure(IllegalStateException(TsMuxNativeBridge.nativeLastError().ifBlank { "native mux video ingest failed" }))
+            }
+        }
+
+        override fun ingestAudio(accessUnit: AudioEncoderNode.EncodedAccessUnit): Result<Unit> {
+            return if (TsMuxNativeBridge.nativeIngestAudio(
+                    accessUnit.data,
+                    accessUnit.presentationTimeUs,
+                    accessUnit.flags,
+                    accessUnit.trackIndex,
+                )
+            ) {
+                Result.success(Unit)
+            } else {
+                Result.failure(IllegalStateException(TsMuxNativeBridge.nativeLastError().ifBlank { "native mux audio ingest failed" }))
+            }
+        }
+
+        override fun drainPacket(): ByteArray {
+            return TsMuxNativeBridge.nativeDrainPacket()
+        }
     }
 }

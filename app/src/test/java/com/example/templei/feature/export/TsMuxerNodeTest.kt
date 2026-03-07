@@ -51,5 +51,17 @@ class TsMuxerNodeTest {
         override fun stop() {
             stopCalls += 1
         }
+
+        override fun ingestVideo(accessUnit: VideoEncoderNode.EncodedAccessUnit): Result<Unit> {
+            return Result.success(Unit)
+        }
+
+        override fun ingestAudio(accessUnit: AudioEncoderNode.EncodedAccessUnit): Result<Unit> {
+            return Result.success(Unit)
+        }
+
+        override fun drainPacket(): ByteArray {
+            return ByteArray(0)
+        }
     }
 }

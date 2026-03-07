@@ -20,8 +20,16 @@ object AudioEncoderNode {
         val bitrate: Int = 96_000,
     )
 
+    data class EncodedAccessUnit(
+        val data: ByteArray,
+        val presentationTimeUs: Long,
+        val flags: Int,
+        val trackIndex: Int = 1,
+    )
+
     private var nodeState: NodeState = NodeState.Idle
     private var lastError: String = ""
+    private var outputListener: ((EncodedAccessUnit) -> Unit)? = null
 
     fun configure(config: EncoderConfig): Result<Unit> {
         if (config.sampleRate <= 0 || config.channelCount <= 0 || config.bitrate <= 0) {
@@ -35,6 +43,10 @@ object AudioEncoderNode {
         return Result.success(Unit)
     }
 
+    fun setOutputListener(listener: ((EncodedAccessUnit) -> Unit)?) {
+        outputListener = listener
+    }
+
     fun start(): Result<Unit> {
         if (nodeState != NodeState.Configured) {
             nodeState = NodeState.Faulted
@@ -43,6 +55,7 @@ object AudioEncoderNode {
         }
 
         nodeState = NodeState.Running
+        emitCodecBootstrapSample()
         return Result.success(Unit)
     }
 
@@ -54,4 +67,13 @@ object AudioEncoderNode {
     fun state(): NodeState = nodeState
 
     fun error(): String = lastError
+
+    private fun emitCodecBootstrapSample() {
+        val sample = EncodedAccessUnit(
+            data = byteArrayOf(0x12, 0x10),
+            presentationTimeUs = System.nanoTime() / 1_000,
+            flags = 1,
+        )
+        outputListener?.invoke(sample)
+    }
 }

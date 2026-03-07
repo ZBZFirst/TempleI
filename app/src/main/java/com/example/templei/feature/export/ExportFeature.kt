@@ -105,7 +105,7 @@ object ExportFeature {
         val validation = validateConfig(config)
         lastConnectionTest = when {
             !validation.isValid -> "transport not ready: ${validation.message}"
-            !transportGateway.isAvailable() -> "${TsMuxerNode.availabilityMessage()}; sender unavailable"
+            !transportGateway.isAvailable() -> transportAvailabilityMessage()
             else -> "endpoint configuration valid"
         }
         return lastConnectionTest
@@ -119,7 +119,7 @@ object ExportFeature {
 
         if (!transportGateway.isAvailable()) {
             sessionState = SessionState.Faulted
-            lastError = "${TsMuxerNode.availabilityMessage()}; sender unavailable"
+            lastError = transportAvailabilityMessage()
             return StreamResult(state = sessionState, error = lastError)
         }
 
@@ -224,20 +224,25 @@ object ExportFeature {
                 return Result.failure(IllegalStateException(SrtTransportNode.availabilityMessage()))
             }
 
-            val muxStarted = TsMuxerNode.start()
-            if (muxStarted.isFailure) {
-                return Result.failure(IllegalStateException(TsMuxerNode.availabilityMessage()))
-            }
-
             val sendingStarted = SrtTransportNode.startSending()
             if (sendingStarted.isFailure) {
                 return Result.failure(IllegalStateException(SrtTransportNode.availabilityMessage()))
+            }
+
+            TsMuxerNode.setPacketOutputListener { packet ->
+                SrtTransportNode.sendPacket(packet)
+            }
+
+            val muxStarted = TsMuxerNode.start()
+            if (muxStarted.isFailure) {
+                return Result.failure(IllegalStateException(TsMuxerNode.availabilityMessage()))
             }
 
             return Result.success(Unit)
         }
 
         override fun stopStream(): Result<Unit> {
+            TsMuxerNode.setPacketOutputListener(null)
             SrtTransportNode.stopSending()
             TsMuxerNode.stop()
             return Result.success(Unit)

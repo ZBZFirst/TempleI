@@ -22,12 +22,15 @@ class SrtTransportNodeTest {
         val endpoint = ObsEndpointSpec(host = "192.168.1.20", port = 9000, latencyMs = 120, mode = "listener")
         val connectResult = SrtTransportNode.connect(endpoint)
         val sendResult = SrtTransportNode.startSending()
+        val packetResult = SrtTransportNode.sendPacket(byteArrayOf(0x47))
 
         assertTrue(connectResult.isSuccess)
         assertTrue(sendResult.isSuccess)
+        assertTrue(packetResult.isSuccess)
         assertTrue(SrtTransportNode.isConnected())
         assertEquals(1, fakeRuntime.connectCalls)
         assertEquals(1, fakeRuntime.startCalls)
+        assertEquals(1, fakeRuntime.packetCalls)
 
         SrtTransportNode.stopSending()
         assertFalse(SrtTransportNode.isConnected())
@@ -38,6 +41,7 @@ class SrtTransportNodeTest {
         var connectCalls = 0
         var startCalls = 0
         var stopCalls = 0
+        var packetCalls = 0
 
         override fun connect(endpoint: ObsEndpointSpec): Result<Unit> {
             connectCalls += 1
@@ -46,6 +50,11 @@ class SrtTransportNodeTest {
 
         override fun startSending(): Result<Unit> {
             startCalls += 1
+            return Result.success(Unit)
+        }
+
+        override fun sendPacket(packet: ByteArray): Result<Unit> {
+            packetCalls += 1
             return Result.success(Unit)
         }
 
