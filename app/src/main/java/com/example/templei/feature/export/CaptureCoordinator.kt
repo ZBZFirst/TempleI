@@ -1,5 +1,6 @@
 package com.example.templei.feature.export
 
+import android.util.Log
 import com.example.templei.feature.camera.CameraFeature
 
 /**
@@ -8,12 +9,19 @@ import com.example.templei.feature.camera.CameraFeature
  * TODO: Attach real camera/microphone outputs to encoder nodes once encode path is implemented.
  */
 object CaptureCoordinator {
+    private const val TAG = "TempleI-CaptureCoord"
+    enum class StreamPathMode {
+        FullAv,
+        VideoOnly,
+        AudioOnly,
+    }
     data class StartResult(
         val isReady: Boolean,
         val error: String? = null,
     )
 
     fun startCapturePathSession(config: ExportFeature.ObsStreamConfig): StartResult {
+        val streamMode = config.streamMode
         if (config.host.isBlank()) {
             return StartResult(isReady = false, error = "host missing")
         }
@@ -62,24 +70,38 @@ object CaptureCoordinator {
             return StartResult(isReady = false, error = AudioEncoderNode.error())
         }
 
-        VideoEncoderNode.setOutputListener { accessUnit ->
-            TsMuxerNode.ingestVideo(accessUnit)
-        }
-        AudioEncoderNode.setOutputListener { accessUnit ->
-            TsMuxerNode.ingestAudio(accessUnit)
-        }
-        CameraFeature.setFrameOutputListener { frame ->
-            VideoEncoderNode.queueFrame(frame)
+        if (streamMode != StreamPathMode.AudioOnly) {
+            VideoEncoderNode.setOutputListener { accessUnit ->
+                val ingest = TsMuxerNode.ingestVideo(accessUnit)
+                if (ingest.isFailure) {
+                    Log.e(TAG, "video->mux ingest failed: ${ingest.exceptionOrNull()?.message.orEmpty()}")
+                }
+            }
+            CameraFeature.setFrameOutputListener { frame ->
+                VideoEncoderNode.queueFrame(frame)
+            }
+            val videoStarted = VideoEncoderNode.start()
+            if (videoStarted.isFailure) {
+                return StartResult(isReady = false, error = VideoEncoderNode.error())
+            }
+        } else {
+            VideoEncoderNode.setOutputListener(null)
+            CameraFeature.setFrameOutputListener(null)
         }
 
-        val videoStarted = VideoEncoderNode.start()
-        if (videoStarted.isFailure) {
-            return StartResult(isReady = false, error = VideoEncoderNode.error())
-        }
-
-        val audioStarted = AudioEncoderNode.start()
-        if (audioStarted.isFailure) {
-            return StartResult(isReady = false, error = AudioEncoderNode.error())
+        if (streamMode != StreamPathMode.VideoOnly) {
+            AudioEncoderNode.setOutputListener { accessUnit ->
+                val ingest = TsMuxerNode.ingestAudio(accessUnit)
+                if (ingest.isFailure) {
+                    Log.e(TAG, "audio->mux ingest failed: ${ingest.exceptionOrNull()?.message.orEmpty()}")
+                }
+            }
+            val audioStarted = AudioEncoderNode.start()
+            if (audioStarted.isFailure) {
+                return StartResult(isReady = false, error = AudioEncoderNode.error())
+            }
+        } else {
+            AudioEncoderNode.setOutputListener(null)
         }
 
         return StartResult(isReady = true)
