@@ -104,6 +104,7 @@ object VideoEncoderNode {
         val configuredHeight = activeConfig.height
         if (frame.width != configuredWidth || frame.height != configuredHeight) {
             // Ignore frames with unexpected dimensions while camera + encoder profile alignment is in progress.
+            Log.w(TAG, "drop frame due to dimension mismatch frame=${frame.width}x${frame.height} encoder=${configuredWidth}x${configuredHeight}")
             return
         }
 

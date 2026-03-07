@@ -4,6 +4,7 @@ import android.content.ContentValues
 import android.content.Context
 import android.graphics.ImageFormat
 import android.provider.MediaStore
+import android.util.Size
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageCapture
@@ -108,6 +109,8 @@ object CameraFeature {
         val videoCaptureUseCase = VideoCapture.withOutput(recorder)
 
         val imageAnalysisUseCase = ImageAnalysis.Builder()
+            // Keep analyzer frames aligned with current encoder profile expectation (1280x720).
+            .setTargetResolution(Size(1280, 720))
             .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
             .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888)
             .build().also { analysis ->
