@@ -11,4 +11,5 @@ internal object SrtNativeBridge {
     external fun nativeSendPacket(packet: ByteArray): Boolean
     external fun nativeStopSending()
     external fun nativeLastError(): String
+    external fun nativeRuntimeInfo(): String
 }

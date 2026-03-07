@@ -26,7 +26,9 @@ object SrtTransportNode {
         return if (resolved.isSuccess) {
             "native srt runtime ready"
         } else {
-            resolved.exceptionOrNull()?.message ?: "sender unavailable"
+            val reason = resolved.exceptionOrNull()?.message ?: "sender unavailable"
+            val info = runCatching { SrtNativeBridge.nativeRuntimeInfo() }.getOrDefault("")
+            if (info.isBlank()) reason else "$reason ($info)"
         }
     }
 

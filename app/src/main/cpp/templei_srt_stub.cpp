@@ -9,7 +9,9 @@
 #include <cstdint>
 #include <cstring>
 #include <mutex>
+#include <sstream>
 #include <string>
+#include <vector>
 
 namespace {
 
@@ -31,24 +33,50 @@ struct SenderState {
     bool connected = false;
     bool sending = false;
     std::string lastError;
+    std::string runtimeInfo;
 };
 
 std::mutex gMutex;
 SenderState gState;
 
+constexpr const char* kRuntimeExpectedPath = "app/src/main/jniLibs/<abi>/libsrt.so";
+
+const char* currentAbi() {
+#if defined(__aarch64__)
+    return "arm64-v8a";
+#elif defined(__arm__)
+    return "armeabi-v7a";
+#elif defined(__x86_64__)
+    return "x86_64";
+#elif defined(__i386__)
+    return "x86";
+#else
+    return "unknown";
+#endif
+}
+
 void setError(const std::string& message) {
     gState.lastError = message;
 }
 
+void setRuntimeInfo(const std::string& message) {
+    gState.runtimeInfo = message;
+}
+
 bool loadApi() {
     if (gState.api.handle != nullptr) {
+        setRuntimeInfo("libsrt loaded; abi=" + std::string(currentAbi()));
         return true;
     }
 
     const char* candidates[] = {"libsrt.so", "libsrt.so.1"};
+    std::vector<std::string> loadErrors;
+
     for (const char* candidate : candidates) {
         void* handle = dlopen(candidate, RTLD_NOW);
         if (handle == nullptr) {
+            const char* detail = dlerror();
+            loadErrors.emplace_back(std::string(candidate) + " -> " + (detail ? detail : "unknown dlopen error"));
             continue;
         }
 
@@ -66,13 +94,27 @@ bool loadApi() {
             gState.api.connect != nullptr &&
             gState.api.send != nullptr &&
             gState.api.close != nullptr) {
+            setRuntimeInfo("libsrt loaded from " + std::string(candidate) + "; abi=" + std::string(currentAbi()));
             return true;
         }
 
+        loadErrors.emplace_back(std::string(candidate) + " -> missing srt_* symbols");
         dlclose(handle);
         gState.api = SrtApi{};
     }
 
+    std::ostringstream summary;
+    summary << "libsrt missing; abi=" << currentAbi()
+            << "; expected=" << kRuntimeExpectedPath
+            << "; attempts=";
+    for (size_t i = 0; i < loadErrors.size(); ++i) {
+        if (i > 0) {
+            summary << " | ";
+        }
+        summary << loadErrors[i];
+    }
+
+    setRuntimeInfo(summary.str());
     setError("libsrt shared library not found");
     return false;
 }
@@ -217,4 +259,12 @@ Java_com_example_templei_feature_export_SrtNativeBridge_nativeLastError(
         jobject) {
     std::lock_guard<std::mutex> lock(gMutex);
     return env->NewStringUTF(gState.lastError.c_str());
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_example_templei_feature_export_SrtNativeBridge_nativeRuntimeInfo(
+        JNIEnv* env,
+        jobject) {
+    std::lock_guard<std::mutex> lock(gMutex);
+    return env->NewStringUTF(gState.runtimeInfo.c_str());
 }
