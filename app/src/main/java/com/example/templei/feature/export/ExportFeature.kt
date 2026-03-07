@@ -102,26 +102,20 @@ object ExportFeature {
     }
 
     fun testEndpoint(config: ObsStreamConfig): String {
-        val validation = validateConfig(config)
-        lastConnectionTest = when {
-            !validation.isValid -> "transport not ready: ${validation.message}"
-            !transportGateway.isAvailable() -> transportAvailabilityMessage()
-            else -> "endpoint configuration valid"
+        val preflightMessage = preflightStartMessage(config)
+        lastConnectionTest = if (preflightMessage != null) {
+            preflightMessage
+        } else {
+            "endpoint configuration valid"
         }
         return lastConnectionTest
     }
 
     fun startStream(config: ObsStreamConfig): StreamResult {
-        val validation = validateConfig(config)
-        if (!validation.isValid) {
+        val preflightMessage = preflightStartMessage(config)
+        if (preflightMessage != null) {
             sessionState = SessionState.Faulted
-            lastError = "start validation failed: ${validation.message}"
-            return StreamResult(state = sessionState, error = lastError)
-        }
-
-        if (!transportGateway.isAvailable()) {
-            sessionState = SessionState.Faulted
-            lastError = "start availability failed: ${transportAvailabilityMessage()}"
+            lastError = preflightMessage
             return StreamResult(state = sessionState, error = lastError)
         }
 
@@ -177,8 +171,9 @@ object ExportFeature {
             return "set a valid port (1-65535) for OBS listener"
         }
 
-        if (!TsMuxerNode.isAvailable() || !SrtTransportNode.isAvailable()) {
-            return "${transportAvailabilityMessage()}; waiting for live transport health"
+        val preflightMessage = preflightStartMessage(config)
+        if (preflightMessage != null) {
+            return "$preflightMessage; waiting for live transport health"
         }
 
         val muxStats = TsMuxerNode.runtimeStats()
@@ -210,6 +205,23 @@ object ExportFeature {
         val muxMessage = TsMuxerNode.availabilityMessage()
         val srtMessage = SrtTransportNode.availabilityMessage()
         return "$muxMessage; $srtMessage"
+    }
+
+    private fun preflightStartMessage(config: ObsStreamConfig): String? {
+        val host = config.host.trim()
+        if (host.isEmpty()) {
+            return "preflight failed: host missing"
+        }
+
+        if (config.port !in 1..65535) {
+            return "preflight failed: port invalid"
+        }
+
+        if (!TsMuxerNode.isAvailable() || !SrtTransportNode.isAvailable()) {
+            return "preflight failed: ${transportAvailabilityMessage()}"
+        }
+
+        return null
     }
 
     interface StreamTransportGateway {

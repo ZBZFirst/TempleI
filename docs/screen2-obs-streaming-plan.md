@@ -109,4 +109,5 @@ This plan keeps **Screen 1 camera behavior unchanged** and uses **Screen 2** as 
 - Current sender runtime expects a loadable SRT shared library (`libsrt.so` or `libsrt.so.1`) at app runtime.
 - Package per-ABI binaries under `app/src/main/jniLibs/<abi>/libsrt.so` (for example `arm64-v8a`).
 - If missing, Screen 2 start diagnostics now surface ABI + attempted library names to speed setup troubleshooting.
+- Preflight before Start now checks host, port, and native runtime availability so Screen 2 can fail early with explicit dependency guidance before transitioning to `Faulted`.
 

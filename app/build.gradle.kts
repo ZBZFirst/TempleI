@@ -15,6 +15,11 @@ android {
             }
         }
 
+        ndk {
+            // Initial native rollout targets physical Android test devices first.
+            abiFilters += listOf("arm64-v8a")
+        }
+
         applicationId = "com.example.templei"
         minSdk = 34
         targetSdk = 34
@@ -48,6 +53,13 @@ android {
         cmake {
             path = file("src/main/cpp/CMakeLists.txt")
             version = "3.22.1"
+        }
+    }
+
+    packaging {
+        jniLibs {
+            // Keep native libs directly loadable for runtime dlopen checks.
+            useLegacyPackaging = true
         }
     }
 }

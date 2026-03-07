@@ -7,6 +7,7 @@ package com.example.templei.feature.export
  * "runtime pending" from a loaded sender integration.
  */
 object SrtTransportNode {
+    private const val SRT_SHARED_LIBRARY = "srt"
     private const val SRT_NATIVE_LIBRARY = "templei_srt"
 
     private var connected = false
@@ -150,10 +151,15 @@ object SrtTransportNode {
 
     private fun loadNativeRuntime(): RuntimeBinding {
         return runCatching {
+            // Attempt to preload libsrt from app jniLibs so JNI side symbol lookup can succeed.
+            runCatching { System.loadLibrary(SRT_SHARED_LIBRARY) }
             System.loadLibrary(SRT_NATIVE_LIBRARY)
             RuntimeBinding.Loaded(JniSrtRuntime)
         }.getOrElse {
-            RuntimeBinding.Unavailable("native srt runtime pending (missing $SRT_NATIVE_LIBRARY)")
+            RuntimeBinding.Unavailable(
+                "native srt runtime pending: package libsrt.so in app/src/main/jniLibs/arm64-v8a/ " +
+                    "(loader=$SRT_NATIVE_LIBRARY, cause=${it.message.orEmpty()})"
+            )
         }
     }
 
@@ -197,7 +203,7 @@ object SrtTransportNode {
             return if (SrtNativeBridge.nativeConnect(endpoint.host, endpoint.port, endpoint.latencyMs, endpoint.mode)) {
                 Result.success(Unit)
             } else {
-                Result.failure(IllegalStateException(SrtNativeBridge.nativeLastError().ifBlank { "native srt connect failed" }))
+                Result.failure(IllegalStateException(buildNativeFailure("native srt connect failed")))
             }
         }
 
@@ -205,7 +211,7 @@ object SrtTransportNode {
             return if (SrtNativeBridge.nativeStartSending()) {
                 Result.success(Unit)
             } else {
-                Result.failure(IllegalStateException(SrtNativeBridge.nativeLastError().ifBlank { "native srt start failed" }))
+                Result.failure(IllegalStateException(buildNativeFailure("native srt start failed")))
             }
         }
 
@@ -213,12 +219,18 @@ object SrtTransportNode {
             return if (SrtNativeBridge.nativeSendPacket(packet)) {
                 Result.success(Unit)
             } else {
-                Result.failure(IllegalStateException(SrtNativeBridge.nativeLastError().ifBlank { "native srt send failed" }))
+                Result.failure(IllegalStateException(buildNativeFailure("native srt send failed")))
             }
         }
 
         override fun stopSending() {
             SrtNativeBridge.nativeStopSending()
+        }
+
+        private fun buildNativeFailure(defaultMessage: String): String {
+            val message = SrtNativeBridge.nativeLastError().ifBlank { defaultMessage }
+            val runtimeInfo = SrtNativeBridge.nativeRuntimeInfo()
+            return if (runtimeInfo.isBlank()) message else "$message ($runtimeInfo)"
         }
     }
 }
