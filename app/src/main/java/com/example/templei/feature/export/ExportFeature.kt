@@ -23,6 +23,7 @@ object ExportFeature {
         val host: String = "",
         val port: Int = DEFAULT_PORT,
         val profile: String = PROFILE_BALANCED,
+        val streamMode: CaptureCoordinator.StreamPathMode = CaptureCoordinator.StreamPathMode.FullAv,
     )
 
     data class ValidationResult(
@@ -39,10 +40,10 @@ object ExportFeature {
     private const val KEY_HOST = "obs_host"
     private const val KEY_PORT = "obs_port"
     private const val KEY_PROFILE = "obs_profile"
+    private const val KEY_STREAM_MODE = "obs_stream_mode"
 
     private const val DEFAULT_PORT = 9000
     private const val PROFILE_BALANCED = "Balanced"
-    private const val PROFILE_LOW_LATENCY = "Low Latency"
 
     private var sessionState: SessionState = SessionState.Idle
     private var lastError: String = ""
@@ -57,6 +58,12 @@ object ExportFeature {
             host = prefs.getString(KEY_HOST, "").orEmpty(),
             port = prefs.getInt(KEY_PORT, DEFAULT_PORT),
             profile = prefs.getString(KEY_PROFILE, PROFILE_BALANCED).orEmpty(),
+            streamMode = runCatching {
+                CaptureCoordinator.StreamPathMode.valueOf(
+                    prefs.getString(KEY_STREAM_MODE, CaptureCoordinator.StreamPathMode.FullAv.name)
+                        ?: CaptureCoordinator.StreamPathMode.FullAv.name,
+                )
+            }.getOrDefault(CaptureCoordinator.StreamPathMode.FullAv),
         )
     }
 
@@ -65,6 +72,7 @@ object ExportFeature {
             .putString(KEY_HOST, config.host.trim())
             .putInt(KEY_PORT, config.port)
             .putString(KEY_PROFILE, config.profile)
+            .putString(KEY_STREAM_MODE, config.streamMode.name)
             .apply()
     }
 
@@ -178,18 +186,26 @@ object ExportFeature {
 
         val muxStats = TsMuxerNode.runtimeStats()
         val srtStats = SrtTransportNode.runtimeStats()
+        val videoStats = VideoEncoderNode.runtimeStats()
+        val audioStats = AudioEncoderNode.runtimeStats()
         return when {
             sessionState != SessionState.Streaming -> "native runtimes loaded; ready to start"
             else -> {
-                "streaming health: mux(v=${muxStats.videoAccessUnitsIngested},a=${muxStats.audioAccessUnitsIngested},ts=${muxStats.packetsDrained}) " +
-                    "srt(sent=${srtStats.packetsSent},bytes=${srtStats.bytesSent},state=${srtStats.socketState}," +
+                "streaming health: mode=${config.streamMode.name} video(frames=${videoStats.framesEncoded}) " +
+                    "audio(frames=${audioStats.framesEncoded}) mux(v=${muxStats.videoAccessUnitsIngested},a=${muxStats.audioAccessUnitsIngested}," +
+                    "ts=${muxStats.packetsDrained},handed=${muxStats.bytesHandedToSrt}) " +
+                    "srt(sent=${srtStats.packetsSent},bytes=${srtStats.bytesSent},handed=${srtStats.bytesHandedToSrt},state=${srtStats.socketState}," +
                     "last=${srtStats.lastSendResult},retries=${srtStats.reconnectAttempts},native=${srtStats.nativeStatsSnapshot})"
             }
         }
     }
 
-    fun nextProfile(current: String): String {
-        return if (current == PROFILE_BALANCED) PROFILE_LOW_LATENCY else PROFILE_BALANCED
+    fun nextStreamMode(current: CaptureCoordinator.StreamPathMode): CaptureCoordinator.StreamPathMode {
+        return when (current) {
+            CaptureCoordinator.StreamPathMode.FullAv -> CaptureCoordinator.StreamPathMode.VideoOnly
+            CaptureCoordinator.StreamPathMode.VideoOnly -> CaptureCoordinator.StreamPathMode.AudioOnly
+            CaptureCoordinator.StreamPathMode.AudioOnly -> CaptureCoordinator.StreamPathMode.FullAv
+        }
     }
 
 
@@ -237,6 +253,8 @@ object ExportFeature {
         }
 
         override fun startStream(endpoint: ObsEndpointSpec): Result<Unit> {
+            TsMuxerNode.resetRuntimeState()
+            SrtTransportNode.resetRuntimeState()
             val muxPrepared = TsMuxerNode.prepare()
             if (muxPrepared.isFailure) {
                 val reason = muxPrepared.exceptionOrNull()?.message ?: TsMuxerNode.availabilityMessage()
@@ -272,6 +290,8 @@ object ExportFeature {
             TsMuxerNode.setPacketOutputListener(null)
             SrtTransportNode.stopSending()
             TsMuxerNode.stop()
+            TsMuxerNode.resetRuntimeState()
+            SrtTransportNode.resetRuntimeState()
             return Result.success(Unit)
         }
     }

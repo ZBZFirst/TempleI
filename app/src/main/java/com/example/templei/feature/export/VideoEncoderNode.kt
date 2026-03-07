@@ -3,6 +3,7 @@ package com.example.templei.feature.export
 import android.media.MediaCodec
 import android.media.MediaCodecInfo
 import android.media.MediaFormat
+import android.util.Log
 import com.example.templei.feature.camera.CameraFeature
 import java.nio.ByteBuffer
 
@@ -12,6 +13,7 @@ import java.nio.ByteBuffer
  * This node encodes camera I420 frames into H.264 Annex-B access units.
  */
 object VideoEncoderNode {
+    private const val TAG = "TempleI-VideoEnc"
     enum class NodeState {
         Idle,
         Configured,
@@ -41,6 +43,12 @@ object VideoEncoderNode {
     private var outputListener: ((EncodedAccessUnit) -> Unit)? = null
     private var activeConfig: EncoderConfig = EncoderConfig()
     private var codec: MediaCodec? = null
+    private var codecConfigAnnexB: ByteArray = ByteArray(0)
+    private var framesEncoded: Long = 0
+    private var firstOutputLogs = 0
+    private var firstIdrSeen = false
+    private var spsSeen = false
+    private var ppsSeen = false
 
     fun configure(config: EncoderConfig): Result<Unit> {
         if (config.width <= 0 || config.height <= 0 || config.fps <= 0 || config.bitrate <= 0) {
@@ -120,6 +128,12 @@ object VideoEncoderNode {
         runCatching { codec?.stop() }
         runCatching { codec?.release() }
         codec = null
+        codecConfigAnnexB = ByteArray(0)
+        framesEncoded = 0
+        firstOutputLogs = 0
+        firstIdrSeen = false
+        spsSeen = false
+        ppsSeen = false
         nodeState = NodeState.Idle
         lastError = ""
     }
@@ -145,13 +159,49 @@ object VideoEncoderNode {
                             outputBuffer.limit(bufferInfo.offset + bufferInfo.size)
                             outputBuffer.get(accessUnit)
 
+                            if ((bufferInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG) != 0) {
+                                activeCodec.releaseOutputBuffer(outputIndex, false)
+                                continue
+                            }
+
+                            val normalizedAccessUnit = normalizeToAnnexB(accessUnit)
+                            val keyFrame = (bufferInfo.flags and MediaCodec.BUFFER_FLAG_KEY_FRAME) != 0
+                            val accessUnitWithConfig = if (
+                                keyFrame &&
+                                codecConfigAnnexB.isNotEmpty() &&
+                                (!containsNalType(normalizedAccessUnit, 7) || !containsNalType(normalizedAccessUnit, 8))
+                            ) {
+                                codecConfigAnnexB + normalizedAccessUnit
+                            } else {
+                                normalizedAccessUnit
+                            }
+
                             outputListener?.invoke(
                                 EncodedAccessUnit(
-                                    data = accessUnit,
+                                    data = accessUnitWithConfig,
                                     presentationTimeUs = bufferInfo.presentationTimeUs,
                                     flags = bufferInfo.flags,
                                 ),
                             )
+                            framesEncoded += 1
+                            val annexB = isAnnexB(accessUnitWithConfig)
+                            val containsSps = containsNalType(accessUnitWithConfig, 7)
+                            val containsPps = containsNalType(accessUnitWithConfig, 8)
+                            val containsIdr = containsNalType(accessUnitWithConfig, 5)
+                            if (containsSps) spsSeen = true
+                            if (containsPps) ppsSeen = true
+                            if (containsIdr && !firstIdrSeen) {
+                                firstIdrSeen = true
+                                Log.i(TAG, "first-idr spsBefore=$spsSeen ppsBefore=$ppsSeen")
+                            }
+                            if (firstOutputLogs < 5) {
+                                Log.i(
+                                    TAG,
+                                    "h264-buffer[${firstOutputLogs + 1}] size=${accessUnitWithConfig.size} flags=${bufferInfo.flags} " +
+                                        "key=$keyFrame annexB=$annexB first16=${toHex(accessUnitWithConfig, 16)}",
+                                )
+                                firstOutputLogs += 1
+                            }
                         }
                         activeCodec.releaseOutputBuffer(outputIndex, false)
                     }
@@ -167,6 +217,7 @@ object VideoEncoderNode {
         if (configPayload.isEmpty()) {
             return
         }
+        codecConfigAnnexB = configPayload
         outputListener?.invoke(
             EncodedAccessUnit(
                 data = configPayload,
@@ -203,5 +254,88 @@ object VideoEncoderNode {
     private fun startsWithStartCode(data: ByteArray): Boolean {
         if (data.size < 4) return false
         return data[0] == 0.toByte() && data[1] == 0.toByte() && data[2] == 0.toByte() && data[3] == 1.toByte()
+    }
+
+    private fun isAnnexB(data: ByteArray): Boolean {
+        if (data.size < 4) return false
+        return (data[0] == 0.toByte() && data[1] == 0.toByte() && data[2] == 1.toByte()) || startsWithStartCode(data)
+    }
+
+    private fun normalizeToAnnexB(data: ByteArray): ByteArray {
+        if (isAnnexB(data)) {
+            return data
+        }
+
+        var offset = 0
+        val chunks = ArrayList<ByteArray>()
+        while (offset + 4 <= data.size) {
+            val nalLen =
+                ((data[offset].toInt() and 0xFF) shl 24) or
+                    ((data[offset + 1].toInt() and 0xFF) shl 16) or
+                    ((data[offset + 2].toInt() and 0xFF) shl 8) or
+                    (data[offset + 3].toInt() and 0xFF)
+            offset += 4
+            if (nalLen <= 0 || offset + nalLen > data.size) {
+                return data
+            }
+            val nal = ByteArray(nalLen + 4)
+            nal[0] = 0x00
+            nal[1] = 0x00
+            nal[2] = 0x00
+            nal[3] = 0x01
+            System.arraycopy(data, offset, nal, 4, nalLen)
+            chunks += nal
+            offset += nalLen
+        }
+
+        if (chunks.isEmpty() || offset != data.size) {
+            return data
+        }
+
+        val total = chunks.sumOf { it.size }
+        val merged = ByteArray(total)
+        var writeOffset = 0
+        chunks.forEach { chunk ->
+            System.arraycopy(chunk, 0, merged, writeOffset, chunk.size)
+            writeOffset += chunk.size
+        }
+        return merged
+    }
+
+    private fun containsNalType(data: ByteArray, nalType: Int): Boolean {
+        var i = 0
+        while (i + 4 < data.size) {
+            val startCodeLen = if (
+                i + 3 < data.size && data[i] == 0.toByte() && data[i + 1] == 0.toByte() && data[i + 2] == 1.toByte()
+            ) {
+                3
+            } else if (
+                i + 4 < data.size && data[i] == 0.toByte() && data[i + 1] == 0.toByte() && data[i + 2] == 0.toByte() && data[i + 3] == 1.toByte()
+            ) {
+                4
+            } else {
+                i += 1
+                continue
+            }
+            val nalIndex = i + startCodeLen
+            if (nalIndex < data.size) {
+                val type = data[nalIndex].toInt() and 0x1F
+                if (type == nalType) return true
+            }
+            i = nalIndex + 1
+        }
+        return false
+    }
+
+    data class RuntimeStats(
+        val framesEncoded: Long,
+    )
+
+    fun runtimeStats(): RuntimeStats = RuntimeStats(framesEncoded = framesEncoded)
+
+    private fun toHex(bytes: ByteArray, maxLen: Int): String {
+        val end = bytes.size.coerceAtMost(maxLen)
+        if (end == 0) return ""
+        return bytes.copyOf(end).joinToString(separator = "") { "%02X".format(it) }
     }
 }
