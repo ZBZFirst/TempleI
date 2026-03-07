@@ -6,10 +6,12 @@ package com.example.templei.feature.export
  * Native implementation currently uses a minimal stub while runtime integration lands.
  */
 internal object SrtNativeBridge {
-    external fun nativeConnect(host: String, port: Int, latencyMs: Int, mode: String): Boolean
+    external fun nativeConnect(host: String, port: Int, latencyMs: Int, mode: String, timeoutUs: Int): Boolean
     external fun nativeStartSending(): Boolean
     external fun nativeSendPacket(packet: ByteArray): Boolean
     external fun nativeStopSending()
     external fun nativeLastError(): String
     external fun nativeRuntimeInfo(): String
+    external fun nativeStatsSnapshot(): String
+    external fun nativeSocketState(): String
 }

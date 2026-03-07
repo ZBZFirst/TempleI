@@ -33,6 +33,37 @@ class TsMuxerNodeTest {
         assertEquals(1, fakeRuntime.stopCalls)
     }
 
+
+    @Test
+    fun `ingest before start is buffered and flushed on start`() {
+        val fakeRuntime = FakeRuntime(packetToDrain = byteArrayOf(0x47))
+        TsMuxerNode.installRuntimeForTesting(fakeRuntime)
+
+        TsMuxerNode.prepare()
+        TsMuxerNode.ingestVideo(
+            VideoEncoderNode.EncodedAccessUnit(
+                data = byteArrayOf(0x00, 0x00, 0x01),
+                presentationTimeUs = 1000,
+                flags = 1,
+            ),
+        )
+        TsMuxerNode.ingestAudio(
+            AudioEncoderNode.EncodedAccessUnit(
+                data = byteArrayOf(0x11, 0x22),
+                presentationTimeUs = 2000,
+                flags = 1,
+            ),
+        )
+
+        // Buffered access units should flush once mux starts.
+        TsMuxerNode.start()
+
+        val stats = TsMuxerNode.runtimeStats()
+        assertEquals(1, stats.videoAccessUnitsIngested)
+        assertEquals(1, stats.audioAccessUnitsIngested)
+        assertEquals(2, stats.packetsDrained)
+    }
+
     @Test
     fun `ingest updates runtime stats`() {
         val fakeRuntime = FakeRuntime(packetToDrain = byteArrayOf(0x47))
