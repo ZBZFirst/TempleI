@@ -180,3 +180,17 @@ Risks that usually force extra back-and-forth:
   4. Validate end-to-end ingest in OBS Media Source using Screen 2 Start/Stop flow.
   5. Update Screen 2 diagnostics text from "runtime pending" to live transport health states.
 
+## Current problems (updated)
+- SRT sender runtime still depends on a real `libsrt.so` at `app/src/main/jniLibs/arm64-v8a/libsrt.so` for device runtime.
+- Auto-install/build of `libsrt.so` now requires two external prerequisites in local dev/CI:
+  1. `ANDROID_NDK_HOME` configured.
+  2. Network access to fetch upstream SRT source when local cache is absent.
+- Android SDK path is still required for Gradle Android tasks (`ANDROID_HOME`/`ANDROID_SDK_ROOT` or `local.properties` with `sdk.dir`).
+
+## Completion list (updated)
+- [COMPLETED] Added sender dependency verification during `preBuild` to fail fast when `libsrt.so` is missing.
+- [COMPLETED] Added automated sender dependency install path (`installSrtArm64` -> `buildSrtArm64`) so app builds attempt to install SRT library when absent.
+- [COMPLETED] Added build helper script `scripts/build-libsrt-android.sh` to clone/build SRT and place `libsrt.so` under `jniLibs`.
+- [COMPLETED] Updated docs (`app/src/main/jniLibs/README.md`, `docs/screen2-obs-streaming-plan.md`) to clarify sender obligations and build prerequisites.
+- [NEXT] Provide stable CI-hosted/prebuilt `libsrt.so` artifacts for all required ABIs to remove network dependency during local/CI builds.
+
