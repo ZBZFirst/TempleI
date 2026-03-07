@@ -105,7 +105,7 @@ object ExportFeature {
         val validation = validateConfig(config)
         lastConnectionTest = when {
             !validation.isValid -> "transport not ready: ${validation.message}"
-            !transportGateway.isAvailable() -> "native mux path unavailable; sender unavailable"
+            !transportGateway.isAvailable() -> transportAvailabilityMessage()
             else -> "endpoint configuration valid"
         }
         return lastConnectionTest
@@ -119,7 +119,7 @@ object ExportFeature {
 
         if (!transportGateway.isAvailable()) {
             sessionState = SessionState.Faulted
-            lastError = "native mux path unavailable; sender unavailable"
+            lastError = transportAvailabilityMessage()
             return StreamResult(state = sessionState, error = lastError)
         }
 
@@ -176,7 +176,7 @@ object ExportFeature {
         }
 
         if (!TsMuxerNode.isAvailable() || !SrtTransportNode.isAvailable()) {
-            return "UI/config ready; waiting for native mpegts+srt runtime"
+            return "${transportAvailabilityMessage()}; waiting for live transport health"
         }
 
         return "ready for OBS listener ingest"
@@ -196,6 +196,12 @@ object ExportFeature {
         )
     }
 
+    private fun transportAvailabilityMessage(): String {
+        val muxMessage = TsMuxerNode.availabilityMessage()
+        val srtMessage = SrtTransportNode.availabilityMessage()
+        return "$muxMessage; $srtMessage"
+    }
+
     interface StreamTransportGateway {
         fun isAvailable(): Boolean
         fun startStream(endpoint: ObsEndpointSpec): Result<Unit>
@@ -210,22 +216,22 @@ object ExportFeature {
         override fun startStream(endpoint: ObsEndpointSpec): Result<Unit> {
             val muxPrepared = TsMuxerNode.prepare()
             if (muxPrepared.isFailure) {
-                return Result.failure(IllegalStateException("native mux path unavailable"))
+                return Result.failure(IllegalStateException(TsMuxerNode.availabilityMessage()))
             }
 
             val connected = SrtTransportNode.connect(endpoint)
             if (connected.isFailure) {
-                return Result.failure(IllegalStateException("sender unavailable"))
+                return Result.failure(IllegalStateException(SrtTransportNode.availabilityMessage()))
             }
 
             val muxStarted = TsMuxerNode.start()
             if (muxStarted.isFailure) {
-                return Result.failure(IllegalStateException("native mux path unavailable"))
+                return Result.failure(IllegalStateException(TsMuxerNode.availabilityMessage()))
             }
 
             val sendingStarted = SrtTransportNode.startSending()
             if (sendingStarted.isFailure) {
-                return Result.failure(IllegalStateException("sender unavailable"))
+                return Result.failure(IllegalStateException(SrtTransportNode.availabilityMessage()))
             }
 
             return Result.success(Unit)

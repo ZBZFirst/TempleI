@@ -33,7 +33,13 @@ class StreamSessionService : Service() {
             }
 
             ensureForegroundNotification()
-            return ExportFeature.startStream(config)
+            val streamResult = ExportFeature.startStream(config)
+            if (streamResult.state != ExportFeature.SessionState.Streaming) {
+                // Keep capture/session teardown symmetric when transport start fails.
+                CaptureCoordinator.stopCapturePathSession()
+                stopForegroundSession()
+            }
+            return streamResult
         }
 
         fun stopSession(): ExportFeature.StreamResult {
