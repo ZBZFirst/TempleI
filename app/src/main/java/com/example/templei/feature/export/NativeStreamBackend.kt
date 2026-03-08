@@ -66,6 +66,45 @@ object NativeStreamBackends {
     }
 }
 
+internal fun deriveFfmpegHealthHint(
+    started: Boolean,
+    statsSnapshot: String,
+    runtimeInfo: String,
+): String? {
+    if (!started) {
+        return null
+    }
+
+    val videoAu = Regex("""videoAu=(\d+)""").find(statsSnapshot)?.groupValues?.get(1)?.toLongOrNull() ?: -1L
+    val audioAu = Regex("""audioAu=(\d+)""").find(statsSnapshot)?.groupValues?.get(1)?.toLongOrNull() ?: -1L
+    val packetCount = Regex("""packets=(\d+)""").find(statsSnapshot)?.groupValues?.get(1)?.toLongOrNull() ?: -1L
+    val ptsFixups = Regex("""ptsFixups=(\d+)""").find(statsSnapshot)?.groupValues?.get(1)?.toLongOrNull() ?: -1L
+    val avDeltaMaxAbsUs = Regex("""avDeltaMaxAbsUs=(\d+)""").find(statsSnapshot)?.groupValues?.get(1)?.toLongOrNull() ?: -1L
+    val runtimeLooksStub = runtimeInfo.contains("stub", ignoreCase = true)
+
+    if (runtimeLooksStub && videoAu == 0L && audioAu == 0L) {
+        return "control path started but media ingress is idle (videoAu=0 audioAu=0); JNI runtime is stubbed so OBS will not receive MPEG-TS/SRT payload yet"
+    }
+
+    if (videoAu == 0L && audioAu == 0L) {
+        return "control path started but encoded access units are not reaching backend ingress yet"
+    }
+
+    if ((videoAu > 0L || audioAu > 0L) && packetCount == 0L) {
+        return "encoded access units reached native ingress but mux/write packet output is still idle (packets=0)"
+    }
+
+    if (ptsFixups > 0L) {
+        return "timestamp guard active: out-of-order PTS observed and corrected (ptsFixups=$ptsFixups)"
+    }
+
+    if (avDeltaMaxAbsUs > 200_000L) {
+        return "A/V clock alignment warning: first-frame delta exceeded 200ms (avDeltaMaxAbsUs=$avDeltaMaxAbsUs)"
+    }
+
+    return null
+}
+
 private object FfmpegStreamBackend : NativeStreamBackend {
     private const val FFMPEG_NATIVE_LIBRARY = "templei_ffmpeg"
 
@@ -79,15 +118,22 @@ private object FfmpegStreamBackend : NativeStreamBackend {
     override val id: NativeStreamBackend.BackendId = NativeStreamBackend.BackendId.Ffmpeg
 
     override fun isAvailable(): Boolean {
-        return resolveRuntime().isSuccess
+        val runtimeResult = resolveRuntime()
+        if (runtimeResult.isFailure) {
+            return false
+        }
+        return runtimeResult.getOrThrow().probeRuntime()
     }
 
     override fun availabilityMessage(): String {
         val runtimeResult = resolveRuntime()
-        return if (runtimeResult.isSuccess) {
+        if (runtimeResult.isFailure) {
+            return runtimeResult.exceptionOrNull()?.message ?: "ffmpeg runtime unavailable"
+        }
+        return if (runtimeResult.getOrThrow().probeRuntime()) {
             "ffmpeg runtime bridge ready"
         } else {
-            runtimeResult.exceptionOrNull()?.message ?: "ffmpeg runtime unavailable"
+            FfmpegNativeBridge.nativeRuntimeInfo().ifBlank { "ffmpeg runtime probe failed" }
         }
     }
 
@@ -182,7 +228,9 @@ private object FfmpegStreamBackend : NativeStreamBackend {
 
     override fun diagnosticsSummary(): String {
         val runtimeInfo = runCatching { FfmpegNativeBridge.nativeRuntimeInfo() }.getOrDefault("runtime-info unavailable")
-        return "started=$started stats={$lastStatsSnapshot} runtime={$runtimeInfo} lastErr={${lastError.ifBlank { "none" }}}"
+        val healthHint = deriveFfmpegHealthHint(started, lastStatsSnapshot, runtimeInfo)
+        val hintSegment = if (healthHint != null) " healthHint={$healthHint}" else ""
+        return "started=$started stats={$lastStatsSnapshot} runtime={$runtimeInfo} lastErr={${lastError.ifBlank { "none" }}}$hintSegment"
     }
 
     private fun resolveRuntime(): Result<Runtime> {
@@ -213,6 +261,8 @@ private object FfmpegStreamBackend : NativeStreamBackend {
     }
 
     private interface Runtime {
+        fun probeRuntime(): Boolean
+
         fun prepare(
             endpoint: ObsEndpointSpec,
             videoEnabled: Boolean,
@@ -232,6 +282,10 @@ private object FfmpegStreamBackend : NativeStreamBackend {
     }
 
     private object JniRuntime : Runtime {
+        override fun probeRuntime(): Boolean {
+            return FfmpegNativeBridge.nativeProbeRuntime()
+        }
+
         override fun prepare(
             endpoint: ObsEndpointSpec,
             videoEnabled: Boolean,

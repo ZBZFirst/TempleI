@@ -95,4 +95,20 @@ class StreamPipelineMetricsTest {
         assertEquals("within budget", diagnostic.reason)
     }
 
+    @Test
+    fun diagnosticSummaryIncludesIngressCounts() {
+        StreamPipelineMetrics.reset()
+
+        StreamPipelineMetrics.recordCameraArrival(nowNs = 1_000_000)
+        StreamPipelineMetrics.recordEncoderQueueIn(nowNs = 1_100_000)
+        StreamPipelineMetrics.recordEncoderOutput(nowNs = 1_200_000)
+        StreamPipelineMetrics.recordMuxVideoIngest()
+        StreamPipelineMetrics.recordMuxAudioIngest()
+
+        val diagnostic = StreamPipelineMetrics.captureDiagnosticSnapshot(frameBudgetUs = 33_333, nowMs = 40_000)
+
+        assertTrue(diagnostic.compactSummary().contains("count(cam=1,encIn=1,encOut=1,vIn=1,aIn=1)"))
+    }
+
+
 }
