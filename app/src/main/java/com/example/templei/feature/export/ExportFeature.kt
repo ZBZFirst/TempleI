@@ -137,6 +137,7 @@ object ExportFeature {
 
         sessionState = SessionState.Starting
         StreamPipelineMetrics.reset()
+        NativeStreamBackends.resetIngressRuntimeStats()
         lastDiagnosticSummary = "diagnostics pending"
         lastDiagnosticAtMs = 0
         val started = transportGateway.startStream(config.toEndpointSpec(), config.streamMode)
@@ -198,19 +199,25 @@ object ExportFeature {
             return "$preflightMessage; waiting for live transport health"
         }
 
+        val captureStats = CaptureCoordinator.runtimeStats()
         val videoStats = VideoEncoderNode.runtimeStats()
         val audioStats = AudioEncoderNode.runtimeStats()
         val pipelineSnapshot = StreamPipelineMetrics.snapshot()
+        val backendIngressStats = NativeStreamBackends.ingressRuntimeStats()
         val ingressSummary =
-            "ingress(videoCalls=${pipelineSnapshot.muxVideoIngestCount},audioCalls=${pipelineSnapshot.muxAudioIngestCount})"
+            "ingress(videoCalls=${pipelineSnapshot.muxVideoIngestCount},audioCalls=${pipelineSnapshot.muxAudioIngestCount},ingress_rejected=${backendIngressStats.ingressRejectedCount},backend_not_ready=${backendIngressStats.backendNotReadyCount},native_error=${backendIngressStats.nativeErrorCount})"
         val backendDiagnostics = transportGateway.diagnosticsSummary()
+        val connectionState = deriveConnectionState(backendDiagnostics)
+        val mediaIngressStatus = deriveMediaIngressStatus(config, videoStats, audioStats)
+        val packetWriteStatus = derivePacketWriteStatus(backendDiagnostics)
         return when {
             sessionState != SessionState.Streaming -> "ffmpeg backend ready; start to begin stream session"
             else -> {
                 val diagnostics = refreshDiagnosticsSnapshotIfDue()
-                "streaming health: mode=${config.streamMode.name} " +
-                    "video(frames=${videoStats.framesEncoded},queued=${videoStats.framesQueuedIn},dropNoInput=${videoStats.framesDroppedNoInputBuffer},state=${videoStats.state}) " +
-                    "audio(frames=${audioStats.framesEncoded}) " +
+                "streaming health: mode=${config.streamMode.name} media=$mediaIngressStatus packetWrite=$packetWriteStatus conn=$connectionState " +
+                    "camera(enqueued=${captureStats.cameraFramesEnqueued},dequeued=${captureStats.cameraFramesDequeued},dropped=${captureStats.cameraFramesDropped},depth=${captureStats.cameraQueueDepth}) " +
+                    "video(frames=${videoStats.framesEncoded},encodedAu=${videoStats.encodedAccessUnitCount},keyframes=${videoStats.keyFrameCount},lastPtsUs=${videoStats.lastVideoPresentationTimeUs},queued=${videoStats.framesQueuedIn},dropNoInput=${videoStats.framesDroppedNoInputBuffer},state=${videoStats.state}) " +
+                    "audio(frames=${audioStats.framesEncoded},encodedAu=${audioStats.encodedAccessUnitCount},codecConfigEvents=${audioStats.codecConfigEventCount},lastPtsUs=${audioStats.lastAudioPresentationTimeUs},state=${audioStats.state}) " +
                     "$ingressSummary " +
                     "backend=${transportGateway.activeBackendName()} backendDiag={$backendDiagnostics} " +
                     "diag{$diagnostics}"
@@ -224,6 +231,35 @@ object ExportFeature {
             CaptureCoordinator.StreamPathMode.VideoOnly -> CaptureCoordinator.StreamPathMode.AudioOnly
             CaptureCoordinator.StreamPathMode.AudioOnly -> CaptureCoordinator.StreamPathMode.FullAv
         }
+    }
+
+
+
+    private fun deriveMediaIngressStatus(
+        config: ObsStreamConfig,
+        videoStats: VideoEncoderNode.RuntimeStats,
+        audioStats: AudioEncoderNode.RuntimeStats,
+    ): String {
+        return when (config.streamMode) {
+            CaptureCoordinator.StreamPathMode.VideoOnly -> if (videoStats.encodedAccessUnitCount > 0) "flowing" else "stalled"
+            CaptureCoordinator.StreamPathMode.AudioOnly -> if (audioStats.encodedAccessUnitCount > 0) "flowing" else "stalled"
+            CaptureCoordinator.StreamPathMode.FullAv -> if (videoStats.encodedAccessUnitCount > 0 && audioStats.encodedAccessUnitCount > 0) "flowing" else "stalled"
+        }
+    }
+
+    private fun derivePacketWriteStatus(backendDiagnostics: String): String {
+        val packets = Regex("""packets=(\d+)""").find(backendDiagnostics)?.groupValues?.get(1)?.toLongOrNull() ?: 0L
+        val consecutiveWriteFailures = Regex("""consecutiveWriteFailures=(\d+)""").find(backendDiagnostics)?.groupValues?.get(1)?.toLongOrNull() ?: 0L
+        return when {
+            packets > 0L && consecutiveWriteFailures == 0L -> "active"
+            packets == 0L && consecutiveWriteFailures > 0L -> "faulted"
+            else -> "pending"
+        }
+    }
+
+    private fun deriveConnectionState(backendDiagnostics: String): String {
+        val match = Regex("""connState=([a-zA-Z]+)""").find(backendDiagnostics)
+        return match?.groupValues?.getOrNull(1)?.lowercase() ?: "unknown"
     }
 
     private fun refreshDiagnosticsSnapshotIfDue(nowMs: Long = System.currentTimeMillis()): String {

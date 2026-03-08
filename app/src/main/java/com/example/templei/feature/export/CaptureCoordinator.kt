@@ -44,6 +44,7 @@ object CaptureCoordinator {
     // PR A instrumentation: boundary counters for ingress debugging.
     private val cameraEnqueueCount = AtomicLong(0)
     private val cameraDequeueCount = AtomicLong(0)
+    private val cameraDropCount = AtomicLong(0)
     private val videoIngressCallCount = AtomicLong(0)
     private val audioIngressCallCount = AtomicLong(0)
 
@@ -51,6 +52,31 @@ object CaptureCoordinator {
     private var relayLoopActive = false
     private var cameraRelayThread: Thread? = null
     private var encoderRelayThread: Thread? = null
+
+
+    data class RuntimeStats(
+        val cameraFramesEnqueued: Long,
+        val cameraFramesDequeued: Long,
+        val cameraFramesDropped: Long,
+        val videoIngressCalls: Long,
+        val audioIngressCalls: Long,
+        val cameraQueueDepth: Int,
+        val encoderQueueDepth: Int,
+    )
+
+    fun runtimeStats(): RuntimeStats {
+        val cameraDepth: Int = synchronized(cameraQueueLock) { cameraToEncoderQueue.size }
+        val encoderDepth: Int = synchronized(encoderQueueLock) { encoderToMuxQueue.size }
+        return RuntimeStats(
+            cameraFramesEnqueued = cameraEnqueueCount.get(),
+            cameraFramesDequeued = cameraDequeueCount.get(),
+            cameraFramesDropped = cameraDropCount.get(),
+            videoIngressCalls = videoIngressCallCount.get(),
+            audioIngressCalls = audioIngressCallCount.get(),
+            cameraQueueDepth = cameraDepth,
+            encoderQueueDepth = encoderDepth,
+        )
+    }
 
     fun startCapturePathSession(context: Context, config: ExportFeature.ObsStreamConfig): StartResult {
         val streamMode: StreamPathMode = config.streamMode
@@ -156,12 +182,16 @@ object CaptureCoordinator {
         synchronized(cameraQueueLock) {
             if (cameraToEncoderQueue.size >= CAMERA_TO_ENCODER_QUEUE_CAPACITY) {
                 cameraToEncoderQueue.removeFirstOrNull()
+                val dropCount = cameraDropCount.incrementAndGet()
                 StreamPipelineMetrics.recordQueueDrop(cameraToEncoder = 1)
+                if (shouldLogBoundaryEvent(dropCount)) {
+                    logIngressSummary("camera-drop")
+                }
             }
             cameraToEncoderQueue.addLast(frame)
             val enqueueCount = cameraEnqueueCount.incrementAndGet()
             if (shouldLogBoundaryEvent(enqueueCount)) {
-                Log.i(TAG, "camera-boundary enqueue count=$enqueueCount depth=${cameraToEncoderQueue.size}")
+                logIngressSummary("camera-enqueue")
             }
             updateQueueDepthMetrics()
         }
@@ -190,7 +220,7 @@ object CaptureCoordinator {
                 if (frame != null) {
                     val dequeueCount = cameraDequeueCount.incrementAndGet()
                     if (shouldLogBoundaryEvent(dequeueCount)) {
-                        Log.i(TAG, "camera-boundary dequeue count=$dequeueCount")
+                        logIngressSummary("camera-dequeue")
                     }
                     VideoEncoderNode.queueFrame(frame)
                 } else {
@@ -253,12 +283,25 @@ object CaptureCoordinator {
         }
         cameraEnqueueCount.set(0)
         cameraDequeueCount.set(0)
+        cameraDropCount.set(0)
         videoIngressCallCount.set(0)
         audioIngressCallCount.set(0)
         synchronized(encoderQueueLock) {
             encoderToMuxQueue.clear()
         }
         updateQueueDepthMetrics()
+    }
+
+
+    private fun logIngressSummary(trigger: String) {
+        val stats = runtimeStats()
+        Log.i(
+            TAG,
+            "ingress-summary trigger=$trigger cameraFramesEnqueued=${stats.cameraFramesEnqueued} " +
+                "cameraFramesDequeued=${stats.cameraFramesDequeued} cameraFramesDropped=${stats.cameraFramesDropped} " +
+                "videoIngressCalls=${stats.videoIngressCalls} audioIngressCalls=${stats.audioIngressCalls} " +
+                "cameraDepth=${stats.cameraQueueDepth} encoderDepth=${stats.encoderQueueDepth}",
+        )
     }
 
     private fun shouldLogBoundaryEvent(count: Long): Boolean {

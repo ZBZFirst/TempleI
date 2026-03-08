@@ -154,6 +154,8 @@ Risks that usually force extra back-and-forth:
 - Foreground service and permission behavior differences across Android versions.
 
 ## Completed work log (most recent first)
+- PR 7 operator-clarity refinement added: Screen 2 streaming status now explicitly includes `media=<flowing|stalled>`, `packetWrite=<active|pending|faulted>`, and `conn=<...>` slices for faster triage.
+- PR 6 validation + release-gate pass added: expanded health-hint unit coverage and added explicit release validation matrix / runtime-ready gate checklist to docs.
 - PR E FFmpeg cutover pass added: Screen 2 transport now uses FFmpeg backend as the active runtime path with backend diagnostics, and legacy `TsMuxerNode`/`SrtTransportNode` contracts are retained only as archive references.
 - PR D audio-path expansion added: FFmpeg backend JNI ingress now accepts AAC access units and stream mode gating now covers `FullAv` / `VideoOnly` / `AudioOnly`.
 - PR C video-path FFmpeg pass added: backend-native JNI bridge now handles VideoOnly encoded AU ingress with start/stop/runtime diagnostics wiring.
@@ -281,6 +283,8 @@ Progress status:
 - [COMPLETED] PR 3 — Bounded queue boundaries
 - [COMPLETED] PR 4 — Backpressure origin reporting to Screen 2
 - [COMPLETED] PR 5 — Validation + docs closeout
+- [COMPLETED] PR 6 — Validation expansion + runtime-ready gate matrix
+- [COMPLETED] PR 7 — Operator status refinement and plan closeout updates
 
 1. **PR 1 — Scope + ownership docs alignment**
    - Confirm Screen 1 vs Screen 2 responsibility language is explicit and consistent.
@@ -302,12 +306,13 @@ Progress status:
    - Add/update tests for queue/drop behavior and diagnostics summaries where feasible.
    - Refresh docs/status notes and clearly report any Android SDK environment limitations encountered during checks.
 
-### PR 5 closeout commentary and line items
+### PR 7 closeout commentary and line items
 - Validation line items completed:
-  - Expanded unit test scenarios for backpressure-origin detection, including drop-priority, latency-over-budget, and healthy-within-budget paths.
-  - Re-ran available local checks and documented environment constraints for Android Gradle tasks.
+  - Expanded unit test scenarios for health-hint behavior (not-started, warning precedence, healthy packet-output).
+  - Added explicit release validation matrix + runtime-ready gate checklist in docs for device/OBS execution evidence.
 - Environment limitation noted:
   - Android SDK path is unavailable in this container, so Gradle Android tasks require `ANDROID_HOME`/`ANDROID_SDK_ROOT` or `local.properties` (`sdk.dir`) to execute.
-- Next actionable line items (post PR 5):
-  - Wire native mux/srt runtimes and update availability gates from pending -> ready when libs load successfully.
-  - Add end-to-end OBS ingest validation once runtime libraries are available on device/CI.
+- Next actionable line items (post PR 7):
+  - Replace JNI bring-up internals with full FFmpeg mux/write runtime (`avformat_write_header` / `av_interleaved_write_frame` / trailer).
+  - Execute full device+OBS release matrix and record evidence for `VideoOnly`, `FullAv`, `AudioOnly` readiness gate.
+  - Remove/archive unused legacy `TsMuxerNode`/`SrtTransportNode` artifacts once FFmpeg runtime is production-stable.

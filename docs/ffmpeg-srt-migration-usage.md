@@ -8,6 +8,12 @@ This guide defines the practical migration path from the current custom mux/send
 - Keep transport target as OBS Media Source ingest over **SRT** with input format **mpegts**.
 - Replace custom TS packetization/sender internals with proven FFmpeg mux/protocol runtime.
 
+## Current status snapshot
+- FFmpeg backend is the active Screen 2 transport path.
+- Stream mode gating supports `FullAv`, `VideoOnly`, and `AudioOnly`.
+- Native runtime remains bring-up oriented; full production mux/send internals are still in progress.
+- Follow-up PR6/PR7 delivered validation-matrix docs and operator-status refinements (`media`, `packetWrite`, `conn`).
+
 ## Scope guardrails
 - Do not add camera preview UI to Screen 2.
 - Do not expand stream modes beyond:
@@ -61,7 +67,7 @@ Add deterministic build path for FFmpeg runtime artifacts with SRT protocol supp
 
 ---
 
-## PR C — FFmpeg runtime path (VideoOnly first)
+## PR C — FFmpeg runtime path (VideoOnly first) [completed]
 
 ### Objective
 Implement FFmpeg-backed transport path for video-only mode to minimize bring-up complexity.
@@ -71,7 +77,7 @@ Implement FFmpeg-backed transport path for video-only mode to minimize bring-up 
    - initializes FFmpeg output context for `srt://...`
    - configures `mpegts` mux output
    - accepts H.264 access units from `VideoEncoderNode`
-2. Route `VideoOnly` mode through FFmpeg backend as the only accepted runtime mode in this PR; other modes remain explicitly rejected until PR D.
+2. Route `VideoOnly` mode through FFmpeg backend as the initial accepted runtime mode for bring-up (completed in PR C).
 3. Keep metrics and Screen 2 diagnostics updates flowing as today.
 
 ### Validation
@@ -80,13 +86,13 @@ Implement FFmpeg-backed transport path for video-only mode to minimize bring-up 
 
 ---
 
-## PR D — Full A/V FFmpeg path + clock alignment
+## PR D — Full A/V FFmpeg path + clock alignment [completed/in-progress tuning]
 
 ### Objective
 Extend FFmpeg path to include AAC audio with stable A/V timestamps.
 
 ### Deliverables
-1. Feed AAC access units from `AudioEncoderNode` into FFmpeg mux backend (current iteration adds JNI bridge ingress + mode gating; full mux timing tuning continues).
+1. Feed AAC access units from `AudioEncoderNode` into FFmpeg mux backend (JNI bridge ingress + mode gating are implemented; full mux timing tuning continues).
 2. Align stream timebase/PTS strategy for long-session stability.
 3. Maintain stream mode gating behavior:
    - `FullAv` -> video + audio
@@ -100,7 +106,7 @@ Extend FFmpeg path to include AAC audio with stable A/V timestamps.
 
 ---
 
-## PR E — Cutover, cleanup, and operator usage docs
+## PR E — Cutover, cleanup, and operator usage docs [completed with follow-up PR6/PR7 refinements]
 
 ### Objective
 Make FFmpeg path primary, retire legacy custom internals where safe, and provide final operator/developer usage documentation.

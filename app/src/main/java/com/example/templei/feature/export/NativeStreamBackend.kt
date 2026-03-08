@@ -37,8 +37,103 @@ interface NativeStreamBackend {
 object NativeStreamBackends {
     private val ffmpegBackend: NativeStreamBackend = FfmpegStreamBackend
 
+    enum class IngressFailureDomain {
+        None,
+        IngressRejected,
+        BackendNotReady,
+        NativeError,
+    }
+
+    data class IngressRuntimeStats(
+        val videoIngressCalls: Long,
+        val audioIngressCalls: Long,
+        val ingressSuccessCount: Long,
+        val ingressFailureCount: Long,
+        val ingressRejectedCount: Long,
+        val backendNotReadyCount: Long,
+        val nativeErrorCount: Long,
+        val lastFailureDomain: IngressFailureDomain,
+        val lastFailureMessage: String,
+    )
+
+    private val ingressLock = Any()
+    private var videoIngressCalls: Long = 0
+    private var audioIngressCalls: Long = 0
+    private var ingressSuccessCount: Long = 0
+    private var ingressFailureCount: Long = 0
+    private var ingressRejectedCount: Long = 0
+    private var backendNotReadyCount: Long = 0
+    private var nativeErrorCount: Long = 0
+    private var lastFailureDomain: IngressFailureDomain = IngressFailureDomain.None
+    private var lastFailureMessage: String = ""
+
     @Volatile
     private var backendOverrideForTesting: NativeStreamBackend? = null
+
+    fun resetIngressRuntimeStats() {
+        synchronized(ingressLock) {
+            videoIngressCalls = 0
+            audioIngressCalls = 0
+            ingressSuccessCount = 0
+            ingressFailureCount = 0
+            ingressRejectedCount = 0
+            backendNotReadyCount = 0
+            nativeErrorCount = 0
+            lastFailureDomain = IngressFailureDomain.None
+            lastFailureMessage = ""
+        }
+    }
+
+    fun ingressRuntimeStats(): IngressRuntimeStats {
+        synchronized(ingressLock) {
+            return IngressRuntimeStats(
+                videoIngressCalls = videoIngressCalls,
+                audioIngressCalls = audioIngressCalls,
+                ingressSuccessCount = ingressSuccessCount,
+                ingressFailureCount = ingressFailureCount,
+                ingressRejectedCount = ingressRejectedCount,
+                backendNotReadyCount = backendNotReadyCount,
+                nativeErrorCount = nativeErrorCount,
+                lastFailureDomain = lastFailureDomain,
+                lastFailureMessage = lastFailureMessage,
+            )
+        }
+    }
+
+    private fun classifyFailureDomain(message: String): IngressFailureDomain {
+        val normalized = message.lowercase()
+        return when {
+            normalized.contains("ingress rejected") -> IngressFailureDomain.IngressRejected
+            normalized.contains("runtime unavailable") || normalized.contains("backend not ready") -> IngressFailureDomain.BackendNotReady
+            else -> IngressFailureDomain.NativeError
+        }
+    }
+
+    private fun recordIngressResult(isVideo: Boolean, result: Result<Unit>) {
+        synchronized(ingressLock) {
+            if (isVideo) {
+                videoIngressCalls += 1
+            } else {
+                audioIngressCalls += 1
+            }
+            if (result.isSuccess) {
+                ingressSuccessCount += 1
+                return
+            }
+
+            ingressFailureCount += 1
+            val message = result.exceptionOrNull()?.message.orEmpty()
+            val domain = classifyFailureDomain(message)
+            when (domain) {
+                IngressFailureDomain.IngressRejected -> ingressRejectedCount += 1
+                IngressFailureDomain.BackendNotReady -> backendNotReadyCount += 1
+                IngressFailureDomain.NativeError -> nativeErrorCount += 1
+                IngressFailureDomain.None -> Unit
+            }
+            lastFailureDomain = domain
+            lastFailureMessage = message
+        }
+    }
 
     fun activeBackend(): NativeStreamBackend {
         return backendOverrideForTesting ?: ffmpegBackend
@@ -50,19 +145,28 @@ object NativeStreamBackends {
     }
 
     fun diagnosticsSummary(): String {
-        return activeBackend().diagnosticsSummary()
+        val backendSummary = activeBackend().diagnosticsSummary()
+        val ingress = ingressRuntimeStats()
+        val lastFailure = if (ingress.lastFailureMessage.isBlank()) "none" else ingress.lastFailureMessage
+        return backendSummary +
+            " ingress(videoCalls=${ingress.videoIngressCalls},audioCalls=${ingress.audioIngressCalls},success=${ingress.ingressSuccessCount},failure=${ingress.ingressFailureCount},ingress_rejected=${ingress.ingressRejectedCount},backend_not_ready=${ingress.backendNotReadyCount},native_error=${ingress.nativeErrorCount},lastDomain=${ingress.lastFailureDomain},lastFailure=$lastFailure)"
     }
 
     fun pushVideoAccessUnit(accessUnit: VideoEncoderNode.EncodedAccessUnit): Result<Unit> {
-        return activeBackend().pushVideoAccessUnit(accessUnit)
+        val result = activeBackend().pushVideoAccessUnit(accessUnit)
+        recordIngressResult(isVideo = true, result = result)
+        return result
     }
 
     fun pushAudioAccessUnit(accessUnit: AudioEncoderNode.EncodedAccessUnit): Result<Unit> {
-        return activeBackend().pushAudioAccessUnit(accessUnit)
+        val result = activeBackend().pushAudioAccessUnit(accessUnit)
+        recordIngressResult(isVideo = false, result = result)
+        return result
     }
 
     internal fun installBackendForTesting(backend: NativeStreamBackend?) {
         backendOverrideForTesting = backend
+        resetIngressRuntimeStats()
     }
 }
 
@@ -107,6 +211,8 @@ internal fun deriveFfmpegHealthHint(
 
 private object FfmpegStreamBackend : NativeStreamBackend {
     private const val FFMPEG_NATIVE_LIBRARY = "templei_ffmpeg"
+    private const val MAX_CONNECT_RETRIES = 3
+    private const val CONNECT_RETRY_BACKOFF_MS = 120L
 
     private var runtime: RuntimeBinding = RuntimeBinding.Uninitialized
     private var started = false
@@ -114,6 +220,8 @@ private object FfmpegStreamBackend : NativeStreamBackend {
     private var audioEnabled = false
     private var lastError: String = ""
     private var lastStatsSnapshot: String = "stats unavailable"
+    private var lastRetryAttempts: Int = 0
+    private var terminalFailureCount: Int = 0
 
     override val id: NativeStreamBackend.BackendId = NativeStreamBackend.BackendId.Ffmpeg
 
@@ -167,22 +275,35 @@ private object FfmpegStreamBackend : NativeStreamBackend {
             return prepareResult
         }
 
-        val startResult = runtimeInstance.start()
-        started = startResult.isSuccess
-        if (startResult.isFailure) {
+        var attempt = 0
+        var startFailure: Throwable? = null
+        while (attempt < MAX_CONNECT_RETRIES) {
+            val startResult = runtimeInstance.start()
+            if (startResult.isSuccess) {
+                started = true
+                lastRetryAttempts = attempt
+                lastError = ""
+                lastStatsSnapshot = runtimeInstance.statsSnapshot()
+                return Result.success(Unit)
+            }
             started = false
-            lastError = startResult.exceptionOrNull()?.message.orEmpty()
-            return startResult
+            startFailure = startResult.exceptionOrNull()
+            attempt += 1
+            if (attempt < MAX_CONNECT_RETRIES) {
+                Thread.sleep(CONNECT_RETRY_BACKOFF_MS)
+            }
         }
 
-        lastError = ""
-        lastStatsSnapshot = runtimeInstance.statsSnapshot()
-        return Result.success(Unit)
+        lastRetryAttempts = attempt
+        terminalFailureCount += 1
+        val failureMessage = startFailure?.message.orEmpty().ifBlank { "native start failed after retry budget" }
+        lastError = "connect retries exhausted ($attempt/$MAX_CONNECT_RETRIES): $failureMessage"
+        return Result.failure(IllegalStateException(lastError))
     }
 
     override fun pushVideoAccessUnit(accessUnit: VideoEncoderNode.EncodedAccessUnit): Result<Unit> {
         if (!started || !videoEnabled) {
-            return Result.success(Unit)
+            return Result.failure(IllegalStateException("ingress rejected: video path not active"))
         }
 
         val runtimeResult = resolveRuntime()
@@ -200,7 +321,7 @@ private object FfmpegStreamBackend : NativeStreamBackend {
 
     override fun pushAudioAccessUnit(accessUnit: AudioEncoderNode.EncodedAccessUnit): Result<Unit> {
         if (!started || !audioEnabled) {
-            return Result.success(Unit)
+            return Result.failure(IllegalStateException("ingress rejected: audio path not active"))
         }
 
         val runtimeResult = resolveRuntime()
@@ -223,6 +344,7 @@ private object FfmpegStreamBackend : NativeStreamBackend {
         videoEnabled = false
         audioEnabled = false
         lastStatsSnapshot = runtimeInstance?.statsSnapshot() ?: "stats unavailable"
+        lastRetryAttempts = 0
         return Result.success(Unit)
     }
 
@@ -230,7 +352,21 @@ private object FfmpegStreamBackend : NativeStreamBackend {
         val runtimeInfo = runCatching { FfmpegNativeBridge.nativeRuntimeInfo() }.getOrDefault("runtime-info unavailable")
         val healthHint = deriveFfmpegHealthHint(started, lastStatsSnapshot, runtimeInfo)
         val hintSegment = if (healthHint != null) " healthHint={$healthHint}" else ""
-        return "started=$started stats={$lastStatsSnapshot} runtime={$runtimeInfo} lastErr={${lastError.ifBlank { "none" }}}$hintSegment"
+        val transportState = deriveTransportConnectionState(lastStatsSnapshot)
+        return "started=$started connState=$transportState retries=$lastRetryAttempts terminalFailures=$terminalFailureCount stats={$lastStatsSnapshot} runtime={$runtimeInfo} lastErr={${lastError.ifBlank { "none" }}}$hintSegment"
+    }
+
+
+    private fun deriveTransportConnectionState(statsSnapshot: String): String {
+        val connectSuccess = Regex("""connectSuccess=(\d+)""").find(statsSnapshot)?.groupValues?.get(1)?.toLongOrNull() ?: 0L
+        val connectFailures = Regex("""connectFailures=(\d+)""").find(statsSnapshot)?.groupValues?.get(1)?.toLongOrNull() ?: 0L
+        val consecutiveWriteFailures = Regex("""consecutiveWriteFailures=(\d+)""").find(statsSnapshot)?.groupValues?.get(1)?.toLongOrNull() ?: 0L
+        return when {
+            started && connectSuccess > 0L && consecutiveWriteFailures == 0L -> "connected"
+            started && consecutiveWriteFailures > 0L -> "retrying"
+            connectFailures > 0L || terminalFailureCount > 0 -> "faulted"
+            else -> "idle"
+        }
     }
 
     private fun resolveRuntime(): Result<Runtime> {
