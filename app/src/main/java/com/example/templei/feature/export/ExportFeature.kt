@@ -200,6 +200,9 @@ object ExportFeature {
 
         val videoStats = VideoEncoderNode.runtimeStats()
         val audioStats = AudioEncoderNode.runtimeStats()
+        val pipelineSnapshot = StreamPipelineMetrics.snapshot()
+        val ingressSummary =
+            "ingress(videoCalls=${pipelineSnapshot.muxVideoIngestCount},audioCalls=${pipelineSnapshot.muxAudioIngestCount})"
         val backendDiagnostics = transportGateway.diagnosticsSummary()
         return when {
             sessionState != SessionState.Streaming -> "ffmpeg backend ready; start to begin stream session"
@@ -208,6 +211,7 @@ object ExportFeature {
                 "streaming health: mode=${config.streamMode.name} " +
                     "video(frames=${videoStats.framesEncoded}) " +
                     "audio(frames=${audioStats.framesEncoded}) " +
+                    "$ingressSummary " +
                     "backend=${transportGateway.activeBackendName()} backendDiag={$backendDiagnostics} " +
                     "diag{$diagnostics}"
             }

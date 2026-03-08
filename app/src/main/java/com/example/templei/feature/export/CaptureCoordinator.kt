@@ -3,6 +3,7 @@ package com.example.templei.feature.export
 import android.content.Context
 import android.util.Log
 import com.example.templei.feature.camera.CameraFeature
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * Coordinates Screen 2 capture-path readiness checks before transport start.
@@ -13,6 +14,8 @@ object CaptureCoordinator {
     private const val TAG = "TempleI-CaptureCoord"
     private const val CAMERA_TO_ENCODER_QUEUE_CAPACITY = 4
     private const val ENCODER_TO_MUX_QUEUE_CAPACITY = 32
+    private const val LOG_FIRST_EVENTS = 5L
+    private const val LOG_EVERY_N_EVENTS = 120L
 
     enum class StreamPathMode {
         FullAv,
@@ -35,6 +38,14 @@ object CaptureCoordinator {
 
     private val encoderQueueLock = Any()
     private val encoderToMuxQueue = ArrayDeque<MuxIngressItem>()
+
+
+
+    // PR A instrumentation: boundary counters for ingress debugging.
+    private val cameraEnqueueCount = AtomicLong(0)
+    private val cameraDequeueCount = AtomicLong(0)
+    private val videoIngressCallCount = AtomicLong(0)
+    private val audioIngressCallCount = AtomicLong(0)
 
     @Volatile
     private var relayLoopActive = false
@@ -148,6 +159,10 @@ object CaptureCoordinator {
                 StreamPipelineMetrics.recordQueueDrop(cameraToEncoder = 1)
             }
             cameraToEncoderQueue.addLast(frame)
+            val enqueueCount = cameraEnqueueCount.incrementAndGet()
+            if (shouldLogBoundaryEvent(enqueueCount)) {
+                Log.i(TAG, "camera-boundary enqueue count=$enqueueCount depth=${cameraToEncoderQueue.size}")
+            }
             updateQueueDepthMetrics()
         }
     }
@@ -173,6 +188,10 @@ object CaptureCoordinator {
                     cameraToEncoderQueue.removeFirstOrNull().also { updateQueueDepthMetrics() }
                 }
                 if (frame != null) {
+                    val dequeueCount = cameraDequeueCount.incrementAndGet()
+                    if (shouldLogBoundaryEvent(dequeueCount)) {
+                        Log.i(TAG, "camera-boundary dequeue count=$dequeueCount")
+                    }
                     VideoEncoderNode.queueFrame(frame)
                 } else {
                     Thread.sleep(2L)
@@ -190,6 +209,11 @@ object CaptureCoordinator {
                 }
                 when (item) {
                     is MuxIngressItem.Video -> {
+                        StreamPipelineMetrics.recordMuxVideoIngest()
+                        val ingressCount = videoIngressCallCount.incrementAndGet()
+                        if (shouldLogBoundaryEvent(ingressCount)) {
+                            Log.i(TAG, "backend-video-ingress calls=$ingressCount bytes=${item.accessUnit.data.size}")
+                        }
                         val ingestResult: Result<Unit> = NativeStreamBackends.pushVideoAccessUnit(item.accessUnit)
                         if (ingestResult.isFailure) {
                             Log.e(TAG, "video->backend ingest failed: ${ingestResult.exceptionOrNull()?.message.orEmpty()}")
@@ -197,6 +221,11 @@ object CaptureCoordinator {
                     }
 
                     is MuxIngressItem.Audio -> {
+                        StreamPipelineMetrics.recordMuxAudioIngest()
+                        val ingressCount = audioIngressCallCount.incrementAndGet()
+                        if (shouldLogBoundaryEvent(ingressCount)) {
+                            Log.i(TAG, "backend-audio-ingress calls=$ingressCount bytes=${item.accessUnit.data.size}")
+                        }
                         val ingestResult: Result<Unit> = NativeStreamBackends.pushAudioAccessUnit(item.accessUnit)
                         if (ingestResult.isFailure) {
                             Log.e(TAG, "audio->backend ingest failed: ${ingestResult.exceptionOrNull()?.message.orEmpty()}")
@@ -222,10 +251,18 @@ object CaptureCoordinator {
         synchronized(cameraQueueLock) {
             cameraToEncoderQueue.clear()
         }
+        cameraEnqueueCount.set(0)
+        cameraDequeueCount.set(0)
+        videoIngressCallCount.set(0)
+        audioIngressCallCount.set(0)
         synchronized(encoderQueueLock) {
             encoderToMuxQueue.clear()
         }
         updateQueueDepthMetrics()
+    }
+
+    private fun shouldLogBoundaryEvent(count: Long): Boolean {
+        return count <= LOG_FIRST_EVENTS || count % LOG_EVERY_N_EVENTS == 0L
     }
 
     private fun updateQueueDepthMetrics() {
