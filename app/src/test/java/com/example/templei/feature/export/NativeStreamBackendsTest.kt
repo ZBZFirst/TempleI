@@ -50,6 +50,79 @@ class NativeStreamBackendsTest {
         }
     }
 
+
+    @Test
+    fun `ingress runtime stats classify rejected backend and native failures`() {
+        val fake = FakeBackend()
+        NativeStreamBackends.installBackendForTesting(fake)
+        try {
+            fake.videoResult = Result.failure(IllegalStateException("ingress rejected: video path not active"))
+            NativeStreamBackends.pushVideoAccessUnit(VideoEncoderNode.EncodedAccessUnit(byteArrayOf(0x01), 1_000L, 0))
+
+            fake.audioResult = Result.failure(IllegalStateException("ffmpeg runtime unavailable"))
+            NativeStreamBackends.pushAudioAccessUnit(AudioEncoderNode.EncodedAccessUnit(byteArrayOf(0x02), 2_000L, 0))
+
+            fake.videoResult = Result.failure(IllegalStateException("native push failed"))
+            NativeStreamBackends.pushVideoAccessUnit(VideoEncoderNode.EncodedAccessUnit(byteArrayOf(0x03), 3_000L, 0))
+
+            val stats = NativeStreamBackends.ingressRuntimeStats()
+            assertEquals(2, stats.videoIngressCalls)
+            assertEquals(1, stats.audioIngressCalls)
+            assertEquals(3, stats.ingressFailureCount)
+            assertEquals(1, stats.ingressRejectedCount)
+            assertEquals(1, stats.backendNotReadyCount)
+            assertEquals(1, stats.nativeErrorCount)
+            assertEquals(NativeStreamBackends.IngressFailureDomain.NativeError, stats.lastFailureDomain)
+        } finally {
+            NativeStreamBackends.installBackendForTesting(null)
+        }
+    }
+
+    @Test
+    fun `diagnostics summary includes ingress failure domain counters`() {
+        val fake = FakeBackend()
+        NativeStreamBackends.installBackendForTesting(fake)
+        try {
+            fake.videoResult = Result.failure(IllegalStateException("ingress rejected: video path not active"))
+            NativeStreamBackends.pushVideoAccessUnit(VideoEncoderNode.EncodedAccessUnit(byteArrayOf(0x01), 1_000L, 0))
+
+            val summary = NativeStreamBackends.diagnosticsSummary()
+
+            assertTrue(summary.contains("ingress_rejected=1"))
+            assertTrue(summary.contains("backend_not_ready=0"))
+            assertTrue(summary.contains("native_error=0"))
+        } finally {
+            NativeStreamBackends.installBackendForTesting(null)
+        }
+    }
+
+
+    @Test
+    fun `ingress runtime stats track successful calls and reset`() {
+        val fake = FakeBackend()
+        NativeStreamBackends.installBackendForTesting(fake)
+        try {
+            NativeStreamBackends.pushVideoAccessUnit(VideoEncoderNode.EncodedAccessUnit(byteArrayOf(0x01), 1_000L, 0))
+            NativeStreamBackends.pushAudioAccessUnit(AudioEncoderNode.EncodedAccessUnit(byteArrayOf(0x02), 2_000L, 0))
+
+            val beforeReset = NativeStreamBackends.ingressRuntimeStats()
+            assertEquals(1, beforeReset.videoIngressCalls)
+            assertEquals(1, beforeReset.audioIngressCalls)
+            assertEquals(2, beforeReset.ingressSuccessCount)
+            assertEquals(0, beforeReset.ingressFailureCount)
+
+            NativeStreamBackends.resetIngressRuntimeStats()
+            val afterReset = NativeStreamBackends.ingressRuntimeStats()
+            assertEquals(0, afterReset.videoIngressCalls)
+            assertEquals(0, afterReset.audioIngressCalls)
+            assertEquals(0, afterReset.ingressSuccessCount)
+            assertEquals(0, afterReset.ingressFailureCount)
+            assertEquals(NativeStreamBackends.IngressFailureDomain.None, afterReset.lastFailureDomain)
+        } finally {
+            NativeStreamBackends.installBackendForTesting(null)
+        }
+    }
+
     @Test
     fun `ffmpeg backend reports unavailable when runtime artifacts are missing`() {
         NativeStreamBackends.installBackendForTesting(null)
@@ -139,6 +212,41 @@ class NativeStreamBackendsTest {
     }
 
 
+
+    @Test
+    fun `health hint is empty when backend is not started`() {
+        val hint = deriveFfmpegHealthHint(
+            started = false,
+            statsSnapshot = "prepared=true started=false videoAu=0 audioAu=0 packets=0",
+            runtimeInfo = "ffmpeg runtime active",
+        )
+
+        assertEquals(null, hint)
+    }
+
+    @Test
+    fun `health hint prioritizes timestamp fixup over av drift warning`() {
+        val hint = deriveFfmpegHealthHint(
+            started = true,
+            statsSnapshot = "prepared=true started=true videoAu=24 audioAu=12 packets=120 bytes=98233 ptsFixups=3 avDeltaMaxAbsUs=250000",
+            runtimeInfo = "ffmpeg symbols resolved",
+        )
+
+        assertTrue(hint.orEmpty().contains("timestamp guard active"))
+        assertFalse(hint.orEmpty().contains("A/V clock alignment warning"))
+    }
+
+    @Test
+    fun `health hint is empty once packet output is active without warnings`() {
+        val hint = deriveFfmpegHealthHint(
+            started = true,
+            statsSnapshot = "prepared=true started=true videoAu=24 audioAu=12 packets=240 bytes=120000 ptsFixups=0 avDeltaMaxAbsUs=12000",
+            runtimeInfo = "ffmpeg runtime active",
+        )
+
+        assertEquals(null, hint)
+    }
+
     @Test
     fun `health hint flags av clock alignment drift`() {
         val hint = deriveFfmpegHealthHint(
@@ -163,6 +271,8 @@ class NativeStreamBackendsTest {
     private class FakeBackend : NativeStreamBackend {
         var videoPushCount: Int = 0
         var audioPushCount: Int = 0
+        var videoResult: Result<Unit> = Result.success(Unit)
+        var audioResult: Result<Unit> = Result.success(Unit)
 
         override val id: NativeStreamBackend.BackendId = NativeStreamBackend.BackendId.Ffmpeg
 
@@ -174,12 +284,12 @@ class NativeStreamBackendsTest {
 
         override fun pushVideoAccessUnit(accessUnit: VideoEncoderNode.EncodedAccessUnit): Result<Unit> {
             videoPushCount += 1
-            return Result.success(Unit)
+            return videoResult
         }
 
         override fun pushAudioAccessUnit(accessUnit: AudioEncoderNode.EncodedAccessUnit): Result<Unit> {
             audioPushCount += 1
-            return Result.success(Unit)
+            return audioResult
         }
 
         override fun stop(): Result<Unit> = Result.success(Unit)

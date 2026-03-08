@@ -149,11 +149,74 @@ Each item below names the exact element to change and the pass criteria needed f
 
 ---
 
-## Delivery order (recommended PR slicing)
-1. **PR A:** Items 1–4 (Kotlin ingress observability + diagnostics).
-2. **PR B:** Items 5–7 (native FFmpeg runtime + timestamp/config correctness).
-3. **PR C:** Items 8–10 (transport health + retry + Screen 2 clarity).
-4. **PR D:** Items 11–12 (automated validation + release gate evidence).
+## Delivery order and required PR count
+
+To reduce risk and keep review size manageable, this buildout is being executed in **7 PRs total**.
+
+1. **PR 1:** Finalize actionable scope and acceptance language in this document, lock the 12-item checklist, and confirm release gating semantics.
+2. **PR 2:** Items 1–2 (camera + video ingress counters and diagnostics wiring).
+3. **PR 3:** Items 3–4 (audio ingress counters + backend ingress/failure-domain reporting in Screen 2).
+4. **PR 4:** Items 5–7 (native FFmpeg runtime replacement, timestamp normalization, codec-config readiness checks).
+5. **PR 5:** Items 8–10 (transport health counters, reconnect behavior, and Screen 2 operator clarity updates).
+6. **PR 6:** Items 11–12 (unit validation expansion + full OBS validation matrix and runtime-ready gate evidence).
+7. **PR 7:** Operator-status refinement + legacy-path documentation cleanup (post-validation polish).
+
+Native runtime variability and follow-up operator clarity updates resulted in a 7-PR execution path for this plan.
+
+---
+
+
+## PR 5 implementation status (transport health + operator clarity)
+
+Completed in this round:
+- Added native transport-health counters in JNI diagnostics snapshot for:
+  - `connectAttempts`, `connectSuccess`, `connectFailures`,
+  - `consecutiveWriteFailures`,
+  - `lastSuccessfulWriteMs`.
+- Added bounded start retry policy on FFmpeg backend start attempts with explicit terminal failure wording when retry budget is exhausted.
+- Surfaced connection state in backend diagnostics (`connState=connected|retrying|faulted|idle`) and propagated it into Screen 2 streaming health text (`conn=<state>`).
+
+Validation note:
+- Android Gradle checks remain environment-blocked in this container until SDK path is configured (`ANDROID_HOME`/`ANDROID_SDK_ROOT` or `local.properties` `sdk.dir`).
+
+---
+
+
+## PR 6 implementation status (validation expansion + release gate evidence)
+
+Completed in this round:
+- Expanded JVM unit coverage around health-hint behavior for start-state, warning precedence, and healthy packet-output cases.
+- Added an explicit release validation matrix checklist and gate table so readiness decisions are recorded consistently.
+
+### Release validation matrix (execution log)
+| Item | Target | Evidence field | Status |
+|---|---|---|---|
+| Stream mode coverage | `VideoOnly`, `FullAv`, `AudioOnly` | mode + diagnostics snapshot | Pending (device/OBS run required) |
+| Start/Stop stability | >= 10 consecutive cycles | cycle index + outcome | Pending (device/OBS run required) |
+| Long-session stability | >= 15 minutes primary mode | duration + drift/errs summary | Pending (device/OBS run required) |
+| OBS ingest | Media Source opens `mpegts` stream | OBS open/play result + timestamps | Pending (device/OBS run required) |
+
+### Runtime-ready release gate (must all be true)
+- [ ] Native runtime is non-stub and reports active transport path.
+- [ ] AU ingress counters increase in active mode(s).
+- [ ] Packet/byte counters increase with no persistent write-failure streak.
+- [ ] OBS playback succeeds in at least one full matrix pass.
+
+Validation note:
+- In this container, Android SDK is unavailable, so Gradle Android tasks cannot be executed until `ANDROID_HOME`/`ANDROID_SDK_ROOT` or `local.properties` (`sdk.dir`) is configured.
+
+---
+
+
+## PR 7 implementation status (operator status refinement)
+
+Completed in this round:
+- Refined Screen 2 streaming status composition to include explicit operator-facing slices for:
+  - `media=<flowing|stalled>`,
+  - `packetWrite=<active|pending|faulted>`,
+  - `conn=<connected|retrying|faulted|idle|unknown>`.
+- Kept screen ownership unchanged (no camera preview UI added to Screen 2).
+- Recorded plan closeout as a 7-PR execution path due post-validation operator-clarity polish.
 
 ---
 

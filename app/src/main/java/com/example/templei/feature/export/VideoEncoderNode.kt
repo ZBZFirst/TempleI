@@ -37,6 +37,8 @@ object VideoEncoderNode {
 
     private const val MIME_TYPE = MediaFormat.MIMETYPE_VIDEO_AVC
     private const val I_FRAME_INTERVAL_SECONDS = 1
+    private const val LOG_FIRST_AU_EVENTS = 5L
+    private const val LOG_EVERY_N_AU_EVENTS = 120L
 
     private var nodeState: NodeState = NodeState.Idle
     private var lastError: String = ""
@@ -47,6 +49,9 @@ object VideoEncoderNode {
     private var framesEncoded: Long = 0
     private var framesQueuedIn: Long = 0
     private var framesDroppedNoInputBuffer: Long = 0
+    private var encodedAccessUnitCount: Long = 0
+    private var keyFrameCount: Long = 0
+    private var lastVideoPresentationTimeUs: Long = -1
     private var firstOutputLogs = 0
     private var firstIdrSeen = false
     private var spsSeen = false
@@ -147,6 +152,9 @@ object VideoEncoderNode {
         framesEncoded = 0
         framesQueuedIn = 0
         framesDroppedNoInputBuffer = 0
+        encodedAccessUnitCount = 0
+        keyFrameCount = 0
+        lastVideoPresentationTimeUs = -1
         firstOutputLogs = 0
         firstIdrSeen = false
         spsSeen = false
@@ -223,6 +231,11 @@ object VideoEncoderNode {
                             )
                             StreamPipelineMetrics.recordEncoderOutput()
                             framesEncoded += 1
+                            encodedAccessUnitCount += 1
+                            lastVideoPresentationTimeUs = bufferInfo.presentationTimeUs
+                            if (keyFrame) {
+                                keyFrameCount += 1
+                            }
                             val annexB = isAnnexB(accessUnitWithConfig)
                             val containsSps = containsNalType(accessUnitWithConfig, 7)
                             val containsPps = containsNalType(accessUnitWithConfig, 8)
@@ -232,6 +245,12 @@ object VideoEncoderNode {
                             if (containsIdr && !firstIdrSeen) {
                                 firstIdrSeen = true
                                 Log.i(TAG, "first-idr-delivered ptsUs=${bufferInfo.presentationTimeUs} bytes=${accessUnitWithConfig.size} spsSeen=$spsSeen ppsSeen=$ppsSeen")
+                            }
+                            if (shouldLogEncodedAuEvent(encodedAccessUnitCount)) {
+                                Log.i(
+                                    TAG,
+                                    "video-au-summary encodedAu=$encodedAccessUnitCount keyframes=$keyFrameCount lastPtsUs=$lastVideoPresentationTimeUs",
+                                )
                             }
                             if (firstOutputLogs < 5) {
                                 Log.i(
@@ -372,6 +391,9 @@ object VideoEncoderNode {
         val framesEncoded: Long,
         val framesQueuedIn: Long,
         val framesDroppedNoInputBuffer: Long,
+        val encodedAccessUnitCount: Long,
+        val keyFrameCount: Long,
+        val lastVideoPresentationTimeUs: Long,
         val state: NodeState,
         val lastError: String,
     )
@@ -380,9 +402,16 @@ object VideoEncoderNode {
         framesEncoded = framesEncoded,
         framesQueuedIn = framesQueuedIn,
         framesDroppedNoInputBuffer = framesDroppedNoInputBuffer,
+        encodedAccessUnitCount = encodedAccessUnitCount,
+        keyFrameCount = keyFrameCount,
+        lastVideoPresentationTimeUs = lastVideoPresentationTimeUs,
         state = nodeState,
         lastError = lastError,
     )
+
+    private fun shouldLogEncodedAuEvent(count: Long): Boolean {
+        return count <= LOG_FIRST_AU_EVENTS || count % LOG_EVERY_N_AU_EVENTS == 0L
+    }
 
     private fun toHex(bytes: ByteArray, maxLen: Int): String {
         val end = bytes.size.coerceAtMost(maxLen)

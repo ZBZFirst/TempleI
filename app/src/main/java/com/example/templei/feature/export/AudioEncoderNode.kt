@@ -37,6 +37,8 @@ object AudioEncoderNode {
     )
 
     private const val MIME_TYPE = MediaFormat.MIMETYPE_AUDIO_AAC
+    private const val LOG_FIRST_AU_EVENTS = 5L
+    private const val LOG_EVERY_N_AU_EVENTS = 120L
 
     private var nodeState: NodeState = NodeState.Idle
     private var lastError: String = ""
@@ -49,6 +51,9 @@ object AudioEncoderNode {
     @Volatile
     private var captureLoopActive = false
     private var framesEncoded: Long = 0
+    private var encodedAccessUnitCount: Long = 0
+    private var codecConfigEventCount: Long = 0
+    private var lastAudioPresentationTimeUs: Long = -1
     private var firstOutputLogs = 0
     private var firstAdtsLogs = 0
 
@@ -147,6 +152,9 @@ object AudioEncoderNode {
         codec = null
         audioConfig = AudioConfig()
         framesEncoded = 0
+        encodedAccessUnitCount = 0
+        codecConfigEventCount = 0
+        lastAudioPresentationTimeUs = -1
         firstOutputLogs = 0
         firstAdtsLogs = 0
 
@@ -220,13 +228,27 @@ object AudioEncoderNode {
                                     ),
                                 )
                                 framesEncoded += 1
-                            } else if (firstOutputLogs < 5) {
-                                Log.i(
-                                    TAG,
-                                    "aac-buffer[${firstOutputLogs + 1}] size=${bufferInfo.size} flags=${bufferInfo.flags} " +
-                                        "codecConfig=true first16=${toHex(payload, 16)}",
-                                )
-                                firstOutputLogs += 1
+                                encodedAccessUnitCount += 1
+                                lastAudioPresentationTimeUs = bufferInfo.presentationTimeUs
+                                if (shouldLogEncodedAuEvent(encodedAccessUnitCount)) {
+                                    Log.i(
+                                        TAG,
+                                        "audio-au-summary encodedAu=$encodedAccessUnitCount codecConfigEvents=$codecConfigEventCount lastPtsUs=$lastAudioPresentationTimeUs",
+                                    )
+                                }
+                            } else {
+                                codecConfigEventCount += 1
+                                if (shouldLogEncodedAuEvent(codecConfigEventCount)) {
+                                    Log.i(TAG, "audio-codec-config-events count=$codecConfigEventCount")
+                                }
+                                if (firstOutputLogs < 5) {
+                                    Log.i(
+                                        TAG,
+                                        "aac-buffer[${firstOutputLogs + 1}] size=${bufferInfo.size} flags=${bufferInfo.flags} " +
+                                            "codecConfig=true first16=${toHex(payload, 16)}",
+                                    )
+                                    firstOutputLogs += 1
+                                }
                             }
                         }
                         activeCodec.releaseOutputBuffer(outputIndex, false)
@@ -289,9 +311,25 @@ object AudioEncoderNode {
 
     data class RuntimeStats(
         val framesEncoded: Long,
+        val encodedAccessUnitCount: Long,
+        val codecConfigEventCount: Long,
+        val lastAudioPresentationTimeUs: Long,
+        val state: NodeState,
+        val lastError: String,
     )
 
-    fun runtimeStats(): RuntimeStats = RuntimeStats(framesEncoded = framesEncoded)
+    fun runtimeStats(): RuntimeStats = RuntimeStats(
+        framesEncoded = framesEncoded,
+        encodedAccessUnitCount = encodedAccessUnitCount,
+        codecConfigEventCount = codecConfigEventCount,
+        lastAudioPresentationTimeUs = lastAudioPresentationTimeUs,
+        state = nodeState,
+        lastError = lastError,
+    )
+
+    private fun shouldLogEncodedAuEvent(count: Long): Boolean {
+        return count <= LOG_FIRST_AU_EVENTS || count % LOG_EVERY_N_AU_EVENTS == 0L
+    }
 
     private fun toHex(bytes: ByteArray, maxLen: Int): String {
         val end = bytes.size.coerceAtMost(maxLen)
