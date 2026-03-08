@@ -1,12 +1,14 @@
 package com.example.templei.feature.export
 
 /**
- * JNI bridge for PR C FFmpeg runtime bring-up.
+ * JNI bridge for PR E FFmpeg runtime cutover readiness.
  *
  * Current scope is incremental AV ingest wiring and diagnostics while native
  * mux/send implementation is still iterative.
  */
 object FfmpegNativeBridge {
+    external fun nativeProbeRuntime(): Boolean
+
     external fun nativePrepare(
         host: String,
         port: Int,

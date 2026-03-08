@@ -46,6 +46,8 @@ object StreamPipelineMetrics {
     ) {
         fun compactSummary(): String {
             return "origin=${origin.name} reason=$reason budgetUs=$frameBudgetUs " +
+                "count(cam=${data.cameraArrivalCount},encIn=${data.encoderQueueInCount},encOut=${data.encoderOutputCount}," +
+                "vIn=${data.muxVideoIngestCount},aIn=${data.muxAudioIngestCount}) " +
                 "latUs(c2e=${data.cameraToEncoderLastLatencyUs},e2m=${data.encoderToMuxLastLatencyUs},m2s=${data.muxToSrtLastLatencyUs}) " +
                 "q(c2e=${data.cameraToEncoderQueueDepth},e2m=${data.encoderToMuxQueueDepth},m2s=${data.muxToSrtQueueDepth}) " +
                 "drop(c2e=${data.cameraToEncoderDropCount},e2m=${data.encoderToMuxDropCount},m2s=${data.muxToSrtDropCount})"

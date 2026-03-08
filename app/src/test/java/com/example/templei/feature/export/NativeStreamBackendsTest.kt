@@ -81,6 +81,77 @@ class NativeStreamBackendsTest {
         assertFalse(startResult.exceptionOrNull()?.message.orEmpty().contains("VideoOnly"))
     }
 
+    @Test
+    fun `health hint flags stub runtime with zero ingress counters`() {
+        val hint = deriveFfmpegHealthHint(
+            started = true,
+            statsSnapshot = "prepared=true started=true videoAu=0 audioAu=0",
+            runtimeInfo = "ffmpeg JNI stub loaded (PR D av-ingest bring-up)",
+        )
+
+        assertTrue(hint.orEmpty().contains("media ingress is idle"))
+        assertTrue(hint.orEmpty().contains("stubbed"))
+    }
+
+    @Test
+    fun `health hint flags stalled ingress for non-stub runtime`() {
+        val hint = deriveFfmpegHealthHint(
+            started = true,
+            statsSnapshot = "prepared=true started=true videoAu=0 audioAu=0",
+            runtimeInfo = "ffmpeg runtime active",
+        )
+
+        assertTrue(hint.orEmpty().contains("not reaching backend ingress"))
+    }
+
+    @Test
+    fun `health hint remains empty when ingress counters are flowing`() {
+        val hint = deriveFfmpegHealthHint(
+            started = true,
+            statsSnapshot = "prepared=true started=true videoAu=9 audioAu=0",
+            runtimeInfo = "ffmpeg JNI stub loaded (PR D av-ingest bring-up)",
+        )
+
+        assertEquals(null, hint)
+    }
+
+    @Test
+    fun `health hint flags native ingress without packet output`() {
+        val hint = deriveFfmpegHealthHint(
+            started = true,
+            statsSnapshot = "prepared=true started=true videoAu=24 audioAu=0 packets=0 bytes=0",
+            runtimeInfo = "ffmpeg symbols resolved (PR C timestamp-guard scaffold)",
+        )
+
+        assertTrue(hint.orEmpty().contains("packet output is still idle"))
+    }
+
+    @Test
+    fun `health hint reports timestamp fixups when present`() {
+        val hint = deriveFfmpegHealthHint(
+            started = true,
+            statsSnapshot = "prepared=true started=true videoAu=24 audioAu=12 packets=120 bytes=98233 ptsFixups=5",
+            runtimeInfo = "ffmpeg symbols resolved (PR C timestamp-guard scaffold)",
+        )
+
+        assertTrue(hint.orEmpty().contains("timestamp guard active"))
+        assertTrue(hint.orEmpty().contains("ptsFixups=5"))
+    }
+
+
+    @Test
+    fun `health hint flags av clock alignment drift`() {
+        val hint = deriveFfmpegHealthHint(
+            started = true,
+            statsSnapshot = "prepared=true started=true videoAu=30 audioAu=30 packets=240 bytes=120000 avDeltaMaxAbsUs=250000",
+            runtimeInfo = "ffmpeg symbols resolved (PR D av-clock scaffold)",
+        )
+
+        assertTrue(hint.orEmpty().contains("A/V clock alignment warning"))
+        assertTrue(hint.orEmpty().contains("avDeltaMaxAbsUs=250000"))
+    }
+
+
     private fun restoreSystemProperty(name: String, previous: String?) {
         if (previous == null) {
             System.clearProperty(name)

@@ -45,10 +45,13 @@ object VideoEncoderNode {
     private var codec: MediaCodec? = null
     private var codecConfigAnnexB: ByteArray = ByteArray(0)
     private var framesEncoded: Long = 0
+    private var framesQueuedIn: Long = 0
+    private var framesDroppedNoInputBuffer: Long = 0
     private var firstOutputLogs = 0
     private var firstIdrSeen = false
     private var spsSeen = false
     private var ppsSeen = false
+    private var noInputBufferLogs = 0
 
     fun configure(config: EncoderConfig): Result<Unit> {
         if (config.width <= 0 || config.height <= 0 || config.fps <= 0 || config.bitrate <= 0) {
@@ -113,14 +116,21 @@ object VideoEncoderNode {
 
         val activeCodec = codec ?: return
         runCatching {
-            val inputIndex = activeCodec.dequeueInputBuffer(0)
+            val inputIndex = activeCodec.dequeueInputBuffer(10_000)
             if (inputIndex >= 0) {
                 val inputBuffer = activeCodec.getInputBuffer(inputIndex) ?: return@runCatching
                 inputBuffer.clear()
                 inputBuffer.put(frame.i420Data)
                 val presentationTimeUs = frame.timestampNs / 1_000L
                 activeCodec.queueInputBuffer(inputIndex, 0, frame.i420Data.size, presentationTimeUs, 0)
+                framesQueuedIn += 1
                 StreamPipelineMetrics.recordEncoderQueueIn()
+            } else {
+                framesDroppedNoInputBuffer += 1
+                if (noInputBufferLogs < 5 || framesDroppedNoInputBuffer % 120L == 0L) {
+                    Log.w(TAG, "encoder-input-unavailable index=$inputIndex droppedNoInput=$framesDroppedNoInputBuffer")
+                    noInputBufferLogs += 1
+                }
             }
             drainOutput()
         }.onFailure {
@@ -135,10 +145,13 @@ object VideoEncoderNode {
         codec = null
         codecConfigAnnexB = ByteArray(0)
         framesEncoded = 0
+        framesQueuedIn = 0
+        framesDroppedNoInputBuffer = 0
         firstOutputLogs = 0
         firstIdrSeen = false
         spsSeen = false
         ppsSeen = false
+        noInputBufferLogs = 0
         nodeState = NodeState.Idle
         lastError = ""
     }
@@ -357,9 +370,19 @@ object VideoEncoderNode {
 
     data class RuntimeStats(
         val framesEncoded: Long,
+        val framesQueuedIn: Long,
+        val framesDroppedNoInputBuffer: Long,
+        val state: NodeState,
+        val lastError: String,
     )
 
-    fun runtimeStats(): RuntimeStats = RuntimeStats(framesEncoded = framesEncoded)
+    fun runtimeStats(): RuntimeStats = RuntimeStats(
+        framesEncoded = framesEncoded,
+        framesQueuedIn = framesQueuedIn,
+        framesDroppedNoInputBuffer = framesDroppedNoInputBuffer,
+        state = nodeState,
+        lastError = lastError,
+    )
 
     private fun toHex(bytes: ByteArray, maxLen: Int): String {
         val end = bytes.size.coerceAtMost(maxLen)
