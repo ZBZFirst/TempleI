@@ -19,158 +19,141 @@ Ship a working end-to-end media path:
 
 ---
 
-## Execution plan
+## 12 actionable implementation items (required changes)
 
-## Phase 1 — Media ingress observability (Kotlin side)
-**Objective:** prove where data stops before touching FFmpeg internals.
+Each item below names the exact element to change and the pass criteria needed for OBS ingest success.
 
-### Tasks
-- Add explicit counters/logging at each boundary:
-  - Camera frame enqueue/dequeue (`CaptureCoordinator`).
-  - Video encoder output callback (`VideoEncoderNode.setOutputListener`).
-  - Audio encoder output callback (`AudioEncoderNode.setOutputListener`).
-  - Backend ingress call sites (`NativeStreamBackends.pushVideoAccessUnit/pushAudioAccessUnit`).
-- Add periodic summary log in streaming mode:
-  - `cameraFrames`, `videoEncoded`, `audioEncoded`, `videoIngressCalls`, `audioIngressCalls`.
-- Keep logs rate-limited (startup burst + every N events) to avoid log spam.
+### 1) Add camera-ingress counters in `CaptureCoordinator`
+**Change required**
+- Add per-session counters for:
+  - `cameraFramesEnqueued`
+  - `cameraFramesDropped`
+  - `cameraFramesDequeued`
+- Log startup burst + rate-limited periodic summary while streaming.
 
-### Exit criteria
-- In `VideoOnly`, `videoEncoded` and `videoIngressCalls` increase within a few seconds.
-- In `FullAv`, both video and audio counters increase.
+**Pass criteria**
+- Counters move in `VideoOnly` and `FullAv` while stream is active.
 
----
+### 2) Add video-encoder output counters in `VideoEncoderNode`
+**Change required**
+- Count encoded video AUs emitted by `setOutputListener`.
+- Track keyframe count and last video PTS.
+- Emit rate-limited diagnostics snapshot.
 
-## Phase 2 — Replace JNI stub with real FFmpeg runtime
-**Objective:** implement actual native mux/send behavior.
+**Pass criteria**
+- `videoEncodedAu > 0` within a few seconds of Start.
 
-### Tasks
-- Replace stub internals in `app/src/main/cpp/templei_ffmpeg_stub.cpp` with real FFmpeg/SRT runtime:
-  - Create output context for `srt://<host>:<port>?mode=caller&latency=<...>`.
-  - Select `mpegts` muxer.
-  - Create video/audio streams with codec parameters matching encoded input (H.264/AAC).
-  - Write container header (`avformat_write_header`).
-  - On each AU push:
-    - Wrap encoded data in `AVPacket`.
-    - Convert/normalize timestamps to stream timebase.
-    - Interleave/write (`av_interleaved_write_frame`).
-  - On stop:
-    - Write trailer.
-    - Close I/O and free all contexts.
-- Keep JNI signatures unchanged to avoid Kotlin API churn.
-- Extend `nativeLastError()` to return first actionable FFmpeg/SRT error text.
+### 3) Add audio-encoder output counters in `AudioEncoderNode`
+**Change required**
+- Count encoded audio AUs emitted by `setOutputListener`.
+- Track last audio PTS and config/header emission events.
+- Emit rate-limited diagnostics snapshot.
 
-### Exit criteria
-- `nativeRuntimeInfo()` reports real runtime (not stub).
-- `videoAu`/`audioAu` and packet-write counters increase during streaming.
-- No silent success path: write failures surface via `lastErr`.
+**Pass criteria**
+- `audioEncodedAu > 0` in `FullAv`/`AudioOnly` mode.
 
----
+### 4) Instrument native ingress callsites in `ExportFeature` backend path
+**Change required**
+- Add counters around `pushVideoAccessUnit` and `pushAudioAccessUnit` calls.
+- Capture failures by error domain (`ingress_rejected`, `backend_not_ready`, `native_error`).
+- Include these counters in Screen 2 diagnostics text.
 
-## Phase 3 — Timestamp/timebase correctness
-**Objective:** avoid OBS probe failures, drift, and unstable playback.
+**Pass criteria**
+- Ingress call counts track encoder output counts with no sustained flatline mismatch.
 
-### Tasks
-- Define explicit timebase strategy:
-  - Video: encoder PTS µs -> stream timebase conversion.
-  - Audio: AAC PTS µs -> stream timebase conversion.
-- Ensure monotonic DTS/PTS per stream.
-- Handle codec-config behavior properly:
-  - H.264 SPS/PPS availability before/with first keyframe.
-  - AAC config consistency for muxer expectations.
-- Add guard rails:
-  - Drop or clamp out-of-order timestamps.
-  - Count and report timestamp corrections.
+### 5) Replace JNI stub internals in `app/src/main/cpp/templei_ffmpeg_stub.cpp`
+**Change required**
+- Implement real FFmpeg runtime:
+  - `avformat_alloc_output_context2` with `mpegts` and SRT URL.
+  - stream creation for H.264 and AAC.
+  - `avformat_write_header` on start.
+  - `av_interleaved_write_frame` on AU push.
+  - `av_write_trailer` + cleanup on stop.
+- Keep JNI signatures unchanged.
 
-### Exit criteria
-- OBS opens stream consistently across repeated starts.
-- 15+ minute run has no severe A/V drift or timestamp errors in logs.
+**Pass criteria**
+- Runtime info no longer identifies as stub and write counters increase.
 
----
+### 6) Implement timestamp/timebase normalization for both streams
+**Change required**
+- Convert encoder microsecond PTS into stream timebase with `av_rescale_q`.
+- Ensure per-stream monotonic DTS/PTS.
+- Add correction counters for clamped/dropped out-of-order timestamps.
 
-## Phase 4 — SRT connection and transport health
-**Objective:** make network behavior observable and resilient.
+**Pass criteria**
+- OBS opens reliably and logs show no persistent timestamp warnings.
 
-### Tasks
-- Add native diagnostics counters:
-  - connect attempts/successes/failures,
-  - packets written,
-  - bytes written,
-  - consecutive write failures,
-  - last successful write timestamp.
-- Surface a compact transport health summary through existing diagnostics string.
-- Add reconnect policy (if required by runtime behavior):
-  - bounded retry window,
-  - explicit terminal failure when retries exhausted.
+### 7) Ensure codec configuration is muxer-ready
+**Change required**
+- Confirm H.264 SPS/PPS availability before/with first IDR packet.
+- Confirm AAC codec config/extradata consistency for MPEG-TS.
+- Fail fast with actionable error text if config is missing.
 
-### Exit criteria
-- On unreachable OBS, app reports transport failure domain clearly.
-- On reachable OBS, packet/byte counters move steadily.
+**Pass criteria**
+- OBS stops reporting repeated "Failed to open media" once stream starts.
 
----
+### 8) Add transport health counters in native runtime
+**Change required**
+- Add counters for:
+  - connect attempts/success/failure
+  - packets written
+  - bytes written
+  - consecutive write failures
+  - last successful write time
+- Expose summary in `nativeRuntimeInfo`/diagnostics.
 
-## Phase 5 — Screen 2 operator clarity
-**Objective:** make UI status reflect real stream health, not only state transitions.
+**Pass criteria**
+- Reachable OBS shows steadily increasing packet/byte counts.
 
-### Tasks
-- Extend interoperability status text to include:
-  - media ingress status (AUs flowing vs stalled),
-  - native packet-write status,
-  - connection status (connected/retrying/faulted).
-- Keep wording actionable and concise.
-- Preserve current screen ownership (no camera preview added to Screen 2).
+### 9) Add bounded reconnect policy for SRT write/connect failures
+**Change required**
+- Add retry budget with bounded backoff.
+- Transition to explicit terminal failure after budget exhaustion.
+- Surface final failure reason to Screen 2.
 
-### Exit criteria
-- `Streaming` + stalled ingress is explicitly called out.
-- Operators can distinguish config issues, ingress issues, and transport issues.
+**Pass criteria**
+- Unreachable OBS produces clear retry + terminal-failure reporting.
 
----
+### 10) Upgrade Screen 2 interoperability text for operator decisions
+**Change required**
+- Add concise status slices for:
+  - media ingress health,
+  - native packet-write health,
+  - connection state (`connected` / `retrying` / `faulted`).
+- Keep Screen 2 free of camera preview UI.
 
-## Phase 6 — Validation matrix and release gate
-**Objective:** prevent regressions and confirm OBS interoperability.
+**Pass criteria**
+- Operators can distinguish config, ingress, and transport failures from one status view.
 
-### Device/runtime matrix
-- Modes: `VideoOnly`, `FullAv`, `AudioOnly`.
-- Start/Stop cycles: at least 10 consecutive cycles.
-- Session duration: 15+ minutes per primary mode.
-- Conditions: stable LAN + transient disconnect/reconnect test.
+### 11) Add automated verification coverage for counters and failure domains
+**Change required**
+- Add/expand unit tests for:
+  - ingress counter movement,
+  - stall detection,
+  - failure-domain mapping,
+  - status-text composition.
+- Keep tests deterministic with fake clock/input where practical.
 
-### Verification checklist
-- OBS Media Source settings:
-  - Input URL from Screen 2 (`srt://...mode=listener...` in OBS side usage pattern).
-  - Input format: `mpegts`.
-- App diagnostics show:
-  - non-zero AU ingress,
-  - non-zero packets/bytes sent,
-  - no persistent write failures.
-- OBS no longer reports repeated “Failed to open media” once stream starts.
+**Pass criteria**
+- Local unit checks pass and protect against false-positive "Streaming" state.
 
-### Release gate
-- Do not mark runtime “ready” unless:
-  - native runtime is non-stub,
-  - AU ingress counters move,
-  - packet-write counters move,
-  - OBS ingest succeeds in at least one full validation pass.
+### 12) Execute release validation matrix before marking runtime ready
+**Change required**
+- Validate all three modes: `VideoOnly`, `FullAv`, `AudioOnly`.
+- Run at least 10 Start/Stop cycles.
+- Run at least one 15+ minute session.
+- Verify OBS Media Source uses `mpegts` and ingest succeeds.
+
+**Pass criteria**
+- Runtime may be marked ready only when ingress, packet-write, and OBS playback all pass.
 
 ---
 
-## Suggested PR slicing
-1. **PR A:** Kotlin-side ingress instrumentation + diagnostics surfacing.
-2. **PR B:** Native FFmpeg runtime replacement (header/write/trailer path).
-3. **PR C:** Timestamp alignment and drift hardening.
-4. **PR D:** Transport health + reconnect diagnostics.
-5. **PR E:** Validation docs and final operator wording updates.
-
----
-
-## Risks and mitigations
-- **Encoder variability across devices**
-  - Mitigate with codec capability logging and fallback config profiles.
-- **Timestamp drift over long sessions**
-  - Mitigate with strict monotonic checks + correction counters.
-- **SRT runtime edge behavior**
-  - Mitigate with explicit retry/backoff and failure-domain reporting.
-- **False-positive “Streaming” state**
-  - Mitigate by coupling status text to real ingress and packet-write counters.
+## Delivery order (recommended PR slicing)
+1. **PR A:** Items 1–4 (Kotlin ingress observability + diagnostics).
+2. **PR B:** Items 5–7 (native FFmpeg runtime + timestamp/config correctness).
+3. **PR C:** Items 8–10 (transport health + retry + Screen 2 clarity).
+4. **PR D:** Items 11–12 (automated validation + release gate evidence).
 
 ---
 
