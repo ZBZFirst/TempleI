@@ -101,11 +101,20 @@ val srtOutputArm64 = layout.projectDirectory.file("src/main/jniLibs/arm64-v8a/li
 val buildSrtArm64 by tasks.registering(Exec::class) {
     group = "native dependencies"
     description = "Build libsrt.so for arm64-v8a and copy it into app/src/main/jniLibs/arm64-v8a"
-    commandLine(
-        "bash",
-        File(rootDir, "scripts/build-libsrt-android.sh").absolutePath,
-        "arm64-v8a",
-    )
+    workingDir = rootDir
+
+    doFirst {
+        val ndkHome = providers.environmentVariable("ANDROID_NDK_HOME").orNull
+            ?: throw GradleException("ANDROID_NDK_HOME is not set for Gradle.")
+        logger.lifecycle("buildSrtArm64 using ANDROID_NDK_HOME=$ndkHome")
+        commandLine(
+            "C:/Program Files/Git/bin/bash.exe",
+            "scripts/build-libsrt-android.sh",
+            "arm64-v8a",
+            ndkHome,
+        )
+    }
+
     onlyIf {
         !srtOutputArm64.asFile.exists()
     }
@@ -129,13 +138,12 @@ val verifySrtDependency by tasks.registering {
         if (!srtOutputArm64.asFile.exists()) {
             throw GradleException(
                 "Missing SRT sender dependency: ${srtOutputArm64.asFile}. " +
-                    "Run './gradlew :app:buildSrtArm64' (requires ANDROID_NDK_HOME + network) " +
-                    "or provide a prebuilt libsrt.so for arm64-v8a."
+                        "Run './gradlew :app:buildSrtArm64' (requires ANDROID_NDK_HOME + network) " +
+                        "or provide a prebuilt libsrt.so for arm64-v8a."
             )
         }
     }
 }
-
 
 val ffmpegOutputDirArm64 = layout.projectDirectory.dir("src/main/jniLibs/arm64-v8a")
 val ffmpegRequiredLibs = listOf(
@@ -148,11 +156,20 @@ val ffmpegRequiredLibs = listOf(
 val buildFfmpegArm64 by tasks.registering(Exec::class) {
     group = "native dependencies"
     description = "Build FFmpeg runtime libs for arm64-v8a and copy them into app/src/main/jniLibs/arm64-v8a"
-    commandLine(
-        "bash",
-        File(rootDir, "scripts/build-ffmpeg-android.sh").absolutePath,
-        "arm64-v8a",
-    )
+    workingDir = rootDir
+
+    doFirst {
+        val ndkHome = providers.environmentVariable("ANDROID_NDK_HOME").orNull
+            ?: throw GradleException("ANDROID_NDK_HOME is not set for Gradle.")
+        logger.lifecycle("buildFfmpegArm64 using ANDROID_NDK_HOME=$ndkHome")
+        commandLine(
+            "C:/Program Files/Git/bin/bash.exe",
+            "scripts/build-ffmpeg-android.sh",
+            "arm64-v8a",
+            ndkHome,
+        )
+    }
+
     onlyIf {
         ffmpegRequiredLibs.any { !ffmpegOutputDirArm64.file(it).asFile.exists() }
     }
@@ -175,8 +192,8 @@ val verifyFfmpegDependency by tasks.registering {
         if (missing.isNotEmpty()) {
             throw GradleException(
                 "Missing FFmpeg runtime dependencies for arm64-v8a: ${missing.joinToString()}. " +
-                    "Run './gradlew :app:buildFfmpegArm64' (requires ANDROID_NDK_HOME + network) " +
-                    "or provide prebuilt FFmpeg runtime libraries under app/src/main/jniLibs/arm64-v8a/."
+                        "Run './gradlew :app:buildFfmpegArm64' (requires ANDROID_NDK_HOME + network) " +
+                        "or provide prebuilt FFmpeg runtime libraries under app/src/main/jniLibs/arm64-v8a/."
             )
         }
     }

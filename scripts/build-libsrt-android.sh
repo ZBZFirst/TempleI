@@ -2,6 +2,7 @@
 set -euo pipefail
 
 ABI="${1:-arm64-v8a}"
+ANDROID_NDK_HOME="${2:-${ANDROID_NDK_HOME:-}}"
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 APP_DIR="$ROOT_DIR/app"
 DEPS_DIR="$APP_DIR/.native_deps"
@@ -25,17 +26,24 @@ if [[ -z "${ANDROID_NDK_HOME:-}" ]]; then
   exit 1
 fi
 
+if ! command -v ninja >/dev/null 2>&1; then
+  echo "Missing required build tool: ninja"
+  echo "Add your Android SDK CMake bin directory to PATH or install Ninja."
+  exit 1
+fi
+
 mkdir -p "$DEPS_DIR"
 
 if [[ ! -d "$SRT_SRC_DIR/.git" ]]; then
   git clone --depth 1 --branch v1.5.4 https://github.com/Haivision/srt.git "$SRT_SRC_DIR"
 fi
 
-cmake -S "$SRT_SRC_DIR" -B "$BUILD_DIR" \
+cmake -G Ninja -S "$SRT_SRC_DIR" -B "$BUILD_DIR" \
   -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake" \
   -DANDROID_ABI="$ANDROID_ABI" \
   -DANDROID_PLATFORM=android-24 \
+  -DCMAKE_INSTALL_PREFIX="$BUILD_DIR/install" \
   -DENABLE_SHARED=ON \
   -DENABLE_STATIC=OFF \
   -DENABLE_APPS=OFF \
@@ -43,9 +51,10 @@ cmake -S "$SRT_SRC_DIR" -B "$BUILD_DIR" \
   -DENABLE_UNITTESTS=OFF \
   -DENABLE_ENCRYPTION=OFF
 
-cmake --build "$BUILD_DIR" --config Release --target srt
+cmake --build "$BUILD_DIR" --config Release
+cmake --install "$BUILD_DIR" --config Release
 
 mkdir -p "$JNI_OUT_DIR"
-cp "$BUILD_DIR/libsrt.so" "$JNI_OUT_DIR/libsrt.so"
+cp "$BUILD_DIR/install/lib/libsrt.so" "$JNI_OUT_DIR/libsrt.so"
 
 echo "Built and installed: $JNI_OUT_DIR/libsrt.so"

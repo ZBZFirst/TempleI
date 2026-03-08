@@ -4,6 +4,7 @@ set -euo pipefail
 trap 'exit_code=$?; echo "FFmpeg build script failed (exit ${exit_code}) at line ${LINENO}: ${BASH_COMMAND}"; exit ${exit_code}' ERR
 
 ABI="${1:-arm64-v8a}"
+ANDROID_NDK_HOME="${2:-${ANDROID_NDK_HOME:-}}"
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 APP_DIR="$ROOT_DIR/app"
 DEPS_DIR="$APP_DIR/.native_deps"
@@ -105,7 +106,7 @@ JOBS="$(command -v nproc >/dev/null 2>&1 && nproc || getconf _NPROCESSORS_ONLN |
 mkdir -p "$FFMPEG_BUILD_DIR" "$JNI_OUT_DIR"
 pushd "$FFMPEG_SRC_DIR" >/dev/null
 
-PKG_CONFIG_PATH="$SRT_BUILD_DIR"
+PKG_CONFIG_PATH="$SRT_BUILD_DIR/install/lib/pkgconfig"
 export PKG_CONFIG_PATH
 
 ./configure \
@@ -126,8 +127,8 @@ export PKG_CONFIG_PATH
   --enable-protocol=srt \
   --enable-libsrt \
   --enable-muxer=mpegts \
-  --extra-cflags="-I$SRT_BUILD_DIR" \
-  --extra-ldflags="-L$APP_DIR/src/main/jniLibs/$ABI" \
+  --extra-cflags="-I$SRT_BUILD_DIR/install/include" \
+  --extra-ldflags="-L$SRT_BUILD_DIR/install/lib" \
   --extra-libs="-lsrt"
 
 make -j"$JOBS"
