@@ -79,18 +79,10 @@ private object FfmpegStreamBackend : NativeStreamBackend {
     override val id: NativeStreamBackend.BackendId = NativeStreamBackend.BackendId.Ffmpeg
 
     override fun isAvailable(): Boolean {
-        if (!FfmpegRuntimeArtifacts.requiredLibrariesPresent()) {
-            return false
-        }
         return resolveRuntime().isSuccess
     }
 
     override fun availabilityMessage(): String {
-        val missing = FfmpegRuntimeArtifacts.missingLibraries()
-        if (missing.isNotEmpty()) {
-            return "ffmpeg runtime pending: missing ${missing.joinToString()}"
-        }
-
         val runtimeResult = resolveRuntime()
         return if (runtimeResult.isSuccess) {
             "ffmpeg runtime bridge ready"
@@ -190,7 +182,7 @@ private object FfmpegStreamBackend : NativeStreamBackend {
 
     override fun diagnosticsSummary(): String {
         val runtimeInfo = runCatching { FfmpegNativeBridge.nativeRuntimeInfo() }.getOrDefault("runtime-info unavailable")
-        return "started=$started stats={$lastStatsSnapshot} runtime={$runtimeInfo} lastErr={$lastError.ifBlank { "none" }}"
+        return "started=$started stats={$lastStatsSnapshot} runtime={$runtimeInfo} lastErr={${lastError.ifBlank { "none" }}}"
     }
 
     private fun resolveRuntime(): Result<Runtime> {
@@ -214,8 +206,9 @@ private object FfmpegStreamBackend : NativeStreamBackend {
         return runCatching {
             System.loadLibrary(FFMPEG_NATIVE_LIBRARY)
             RuntimeBinding.Loaded(JniRuntime)
-        }.getOrElse {
-            RuntimeBinding.Unavailable("ffmpeg native bridge pending (missing $FFMPEG_NATIVE_LIBRARY)")
+        }.getOrElse { error ->
+            val reason = error.message ?: error::class.java.simpleName
+            RuntimeBinding.Unavailable("ffmpeg native bridge load failed: $reason")
         }
     }
 
@@ -270,7 +263,7 @@ private object FfmpegStreamBackend : NativeStreamBackend {
 
         override fun pushVideo(accessUnit: VideoEncoderNode.EncodedAccessUnit): Result<Unit> {
             val ok = FfmpegNativeBridge.nativePushVideoAccessUnit(
-                accessUnit.bytes,
+                accessUnit.data,
                 accessUnit.presentationTimeUs,
                 accessUnit.flags,
             )
@@ -283,7 +276,7 @@ private object FfmpegStreamBackend : NativeStreamBackend {
 
         override fun pushAudio(accessUnit: AudioEncoderNode.EncodedAccessUnit): Result<Unit> {
             val ok = FfmpegNativeBridge.nativePushAudioAccessUnit(
-                accessUnit.bytes,
+                accessUnit.data,
                 accessUnit.presentationTimeUs,
                 accessUnit.flags,
             )
@@ -305,28 +298,5 @@ private object FfmpegStreamBackend : NativeStreamBackend {
         private fun lastError(defaultMessage: String): String {
             return FfmpegNativeBridge.nativeLastError().ifBlank { defaultMessage }
         }
-    }
-}
-
-private object FfmpegRuntimeArtifacts {
-    private const val ROOT_PATH_PROPERTY = "templei.project.root"
-    private const val FALLBACK_ROOT_PATH = "/workspace/TempleI"
-    private const val ARM64_ABI = "arm64-v8a"
-
-    private val requiredLibNames = listOf(
-        "libavcodec.so",
-        "libavformat.so",
-        "libavutil.so",
-        "libswresample.so",
-    )
-
-    fun requiredLibrariesPresent(): Boolean {
-        return missingLibraries().isEmpty()
-    }
-
-    fun missingLibraries(): List<String> {
-        val rootPath = System.getProperty(ROOT_PATH_PROPERTY)?.ifBlank { null } ?: System.getProperty("user.dir")?.ifBlank { null } ?: FALLBACK_ROOT_PATH
-        val abiRoot = java.io.File(rootPath, "app/src/main/jniLibs/$ARM64_ABI")
-        return requiredLibNames.filterNot { java.io.File(abiRoot, it).exists() }
     }
 }
