@@ -209,7 +209,7 @@ object ExportFeature {
             else -> {
                 val diagnostics = refreshDiagnosticsSnapshotIfDue()
                 "streaming health: mode=${config.streamMode.name} " +
-                    "video(frames=${videoStats.framesEncoded}) " +
+                    "video(frames=${videoStats.framesEncoded},queued=${videoStats.framesQueuedIn},dropNoInput=${videoStats.framesDroppedNoInputBuffer},state=${videoStats.state}) " +
                     "audio(frames=${audioStats.framesEncoded}) " +
                     "$ingressSummary " +
                     "backend=${transportGateway.activeBackendName()} backendDiag={$backendDiagnostics} " +
