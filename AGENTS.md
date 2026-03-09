@@ -154,6 +154,12 @@ Risks that usually force extra back-and-forth:
 - Foreground service and permission behavior differences across Android versions.
 
 ## Completed work log (most recent first)
+- Added explicit next-phase hardware validation + runtime-hardening evidence plan (including screenshot/log workflow and exit criteria) to accelerate connection-issue triage.
+- Streaming-success 4-PR planning track is now fully documented as completed in `docs/streaming-success-pr-plan.md` (PR1-PR4 status all marked complete); PR4 includes execution matrix + release-gate checklist templates and evidence capture fields.
+- PR4 documentation pass completed: added device/OBS validation matrix scaffold, troubleshooting evidence template, and explicit go/no-go checklist to drive release readiness evidence collection.
+- PR3 runtime-visibility pass completed: native diagnostics now expose explicit `runtimeMode` and packet/byte write aliases (`packetsWritten` / `bytesWritten`) with backward-compatible parsing on the Kotlin side.
+- PR2 continuity hardening pass completed: capture/encoder contract checks were added before transport start, with ingress mismatch and queue-pressure surfacing in Screen 2 health output.
+- PR1 stage-gate diagnostics pass completed: Screen 2 status now reports stage summary + `firstFailedStage` + `reasonCode` for faster operator triage.
 - PR 7 operator-clarity refinement added: Screen 2 streaming status now explicitly includes `media=<flowing|stalled>`, `packetWrite=<active|pending|faulted>`, and `conn=<...>` slices for faster triage.
 - PR 6 validation + release-gate pass added: expanded health-hint unit coverage and added explicit release validation matrix / runtime-ready gate checklist to docs.
 - PR E FFmpeg cutover pass added: Screen 2 transport now uses FFmpeg backend as the active runtime path with backend diagnostics, and legacy `TsMuxerNode`/`SrtTransportNode` contracts are retained only as archive references.
@@ -188,14 +194,53 @@ Risks that usually force extra back-and-forth:
 
 
 ## Runtime limitation and next implementation target
-- Current status: **FFmpeg backend is now the active Screen 2 transport path with JNI bring-up stubs for encoded video/audio ingress**.
-- Reason: Full native FFmpeg mux/send runtime behavior is still iterative; current native layer is a bring-up stub for lifecycle and AU ingress diagnostics.
+- Current status: **FFmpeg backend remains the active Screen 2 transport path; diagnostics/interop observability has been expanded, but end-to-end device+OBS evidence is still pending.**
+- Reason: Runtime visibility and gating were improved, but release readiness still depends on hardware validation and final mux/send behavior confirmation under real OBS ingest.
 - Planned follow-up (next implementation target):
-  1. Replace FFmpeg JNI stub internals with full `libavformat` mux + SRT send runtime logic.
-  2. Complete A/V timestamp/timebase alignment and long-session drift tuning.
-  3. Validate end-to-end OBS Media Source ingest in `FullAv`, `VideoOnly`, and `AudioOnly`.
-  4. Promote diagnostics from bring-up counters to live transport health + error domains.
+  1. Execute and record the PR4 device/OBS validation matrix evidence for `VideoOnly`, `FullAv`, and `AudioOnly`.
+  2. Confirm sustained packet-write behavior (`packetsWritten`/`bytesWritten`) and start/stop resilience under the release-gate checklist.
+  3. Complete/verify final A/V timestamp + timebase alignment and long-session drift tuning.
+  4. Promote diagnostics from bring-up counters to stable transport health + error domains backed by device evidence.
   5. Archive/remove unused legacy mux/srt contract implementations once FFmpeg runtime is production-stable.
+
+## Next phase plan: hardware validation + runtime hardening evidence (operator-friendly)
+Goal: make connection failures reproducible and easy to capture in screenshots/log bundles.
+
+### Is screenshot capture necessary for debugging?
+- **Yes, it is strongly recommended** for this phase.
+- Reason: Screen 2 already summarizes `media`, `packetWrite`, `conn`, `firstFailedStage`, and `reasonCode`; a single screenshot captures cross-stage state at failure time for async triage.
+- Screenshot evidence should be paired with a short logcat slice to avoid false conclusions from UI-only snapshots.
+
+### Evidence capture workflow (per run)
+1. On Android device, set mode (`VideoOnly` / `FullAv` / `AudioOnly`) and target endpoint.
+2. Clear logs and start capture:
+   - `adb logcat -c`
+   - `adb logcat | rg "TempleI|Ffmpeg|Stream|SRT|mpegts"`
+3. Reproduce failure (Start stream, wait 10-20s).
+4. Take screenshot of Screen 2 interop/health area.
+5. Record the latest native stats line containing at least:
+   - `runtimeMode`, `packetsWritten`, `bytesWritten`, `consecutiveWriteFailures`, `connectAttempts`, `connectSuccess`, `connectFailures`.
+6. Append result to PR4 matrix row (`Pending` -> `Pass`/`Fail`) with run ID + notes.
+
+### Runtime hardening tasks (post-evidence)
+- Add explicit connection-failure buckets in diagnostics output:
+  - DNS/host resolution failure,
+  - socket/connect timeout,
+  - write failure/retry exhaustion,
+  - endpoint refused/listener absent.
+- Add bounded reconnect trace fields:
+  - `retryAttempt`, `retryBudget`, `lastRetryDelayMs`, `lastConnectErrDomain`.
+- Promote operator hint precedence for connection faults:
+  1. transport/connect domain faults,
+  2. packet write fault streak,
+  3. ingress/encoder stalls,
+  4. queue pressure conditions.
+
+### Exit criteria for this phase
+- At least one failure screenshot + matching log bundle exists for each stream mode.
+- At least one successful run screenshot + log bundle exists for each stream mode.
+- PR4 matrix rows are filled with real evidence links/IDs (no `TBD`).
+- Release gate checklist can be evaluated from recorded evidence without re-running ad hoc tests.
 
 ## Current problems (updated)
 - SRT sender runtime still depends on a real `libsrt.so` at `app/src/main/jniLibs/arm64-v8a/libsrt.so` for device runtime.

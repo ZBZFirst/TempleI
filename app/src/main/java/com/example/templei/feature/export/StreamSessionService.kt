@@ -32,6 +32,12 @@ class StreamSessionService : Service() {
                 return ExportFeature.markFault("capture path not ready: ${captureReady.error.orEmpty()}")
             }
 
+            val contractStatus = CaptureCoordinator.contractStatus(config.streamMode)
+            if (!contractStatus.ready) {
+                CaptureCoordinator.stopCapturePathSession()
+                return ExportFeature.markFault("capture contract failed: ${contractStatus.reason}")
+            }
+
             ensureForegroundNotification()
             val streamResult = ExportFeature.startStream(config)
             if (streamResult.state != ExportFeature.SessionState.Streaming) {
