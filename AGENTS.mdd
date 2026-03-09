@@ -1,0 +1,7 @@
+# AGENTS.mdd
+
+This file mirrors active planning notes from `AGENTS.md` for operator convenience.
+
+- Latest update: added the next-phase hardware validation + runtime-hardening evidence workflow
+  (screenshot + log bundle capture, failure-domain triage, and exit criteria).
+- Canonical instructions remain in `AGENTS.md`.
