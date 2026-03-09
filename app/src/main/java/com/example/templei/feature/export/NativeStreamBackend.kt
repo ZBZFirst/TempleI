@@ -184,10 +184,10 @@ internal fun deriveFfmpegHealthHint(
     val packetCount = Regex("""packets=(\d+)""").find(statsSnapshot)?.groupValues?.get(1)?.toLongOrNull() ?: -1L
     val ptsFixups = Regex("""ptsFixups=(\d+)""").find(statsSnapshot)?.groupValues?.get(1)?.toLongOrNull() ?: -1L
     val avDeltaMaxAbsUs = Regex("""avDeltaMaxAbsUs=(\d+)""").find(statsSnapshot)?.groupValues?.get(1)?.toLongOrNull() ?: -1L
-    val runtimeLooksStub = runtimeInfo.contains("stub", ignoreCase = true)
+    val runtimeLooksStub = runtimeInfo.contains("runtimeMode=stub", ignoreCase = true) || runtimeInfo.contains("stub", ignoreCase = true)
 
     if (runtimeLooksStub && videoAu == 0L && audioAu == 0L) {
-        return "control path started but media ingress is idle (videoAu=0 audioAu=0); JNI runtime is stubbed so OBS will not receive MPEG-TS/SRT payload yet"
+        return "control path started but media ingress is idle (videoAu=0 audioAu=0); native runtime reports stub mode so OBS will not receive MPEG-TS/SRT payload yet"
     }
 
     if (videoAu == 0L && audioAu == 0L) {

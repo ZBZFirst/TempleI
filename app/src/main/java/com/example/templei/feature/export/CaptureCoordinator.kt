@@ -53,6 +53,17 @@ object CaptureCoordinator {
     private var cameraRelayThread: Thread? = null
     private var encoderRelayThread: Thread? = null
 
+    @Volatile
+    private var capturePathActive = false
+
+    @Volatile
+    private var frameOutputListenerAttached = false
+
+    @Volatile
+    private var videoOutputListenerAttached = false
+
+    @Volatile
+    private var audioOutputListenerAttached = false
 
     data class RuntimeStats(
         val cameraFramesEnqueued: Long,
@@ -78,6 +89,29 @@ object CaptureCoordinator {
         )
     }
 
+    data class ContractStatus(
+        val ready: Boolean,
+        val reason: String,
+    )
+
+    fun contractStatus(streamMode: StreamPathMode): ContractStatus {
+        if (!capturePathActive) {
+            return ContractStatus(ready = false, reason = "capture session not active")
+        }
+
+        if (streamMode != StreamPathMode.AudioOnly && !frameOutputListenerAttached) {
+            return ContractStatus(ready = false, reason = "camera frame listener missing")
+        }
+        if (streamMode != StreamPathMode.AudioOnly && !videoOutputListenerAttached) {
+            return ContractStatus(ready = false, reason = "video encoder listener missing")
+        }
+        if (streamMode != StreamPathMode.VideoOnly && !audioOutputListenerAttached) {
+            return ContractStatus(ready = false, reason = "audio encoder listener missing")
+        }
+
+        return ContractStatus(ready = true, reason = "ready")
+    }
+
     fun startCapturePathSession(context: Context, config: ExportFeature.ObsStreamConfig): StartResult {
         val streamMode: StreamPathMode = config.streamMode
         if (config.host.isBlank()) {
@@ -92,6 +126,7 @@ object CaptureCoordinator {
         }
 
         startRelayWorkers()
+        capturePathActive = true
 
         val videoEncoderConfig: VideoEncoderNode.EncoderConfig = when (config.profile) {
             "Low Latency" -> VideoEncoderNode.EncoderConfig(
@@ -139,10 +174,12 @@ object CaptureCoordinator {
             VideoEncoderNode.setOutputListener { accessUnit ->
                 enqueueMuxIngress(MuxIngressItem.Video(accessUnit))
             }
+            videoOutputListenerAttached = true
             CameraFeature.setFrameOutputListener { frame ->
                 StreamPipelineMetrics.recordCameraArrival()
                 enqueueCameraFrame(frame)
             }
+            frameOutputListenerAttached = true
             val videoStarted: Result<Unit> = VideoEncoderNode.start()
             if (videoStarted.isFailure) {
                 stopRelayWorkers()
@@ -151,12 +188,15 @@ object CaptureCoordinator {
         } else {
             VideoEncoderNode.setOutputListener(null)
             CameraFeature.setFrameOutputListener(null)
+            videoOutputListenerAttached = false
+            frameOutputListenerAttached = false
         }
 
         if (streamMode != StreamPathMode.VideoOnly) {
             AudioEncoderNode.setOutputListener { accessUnit ->
                 enqueueMuxIngress(MuxIngressItem.Audio(accessUnit))
             }
+            audioOutputListenerAttached = true
             val audioStarted: Result<Unit> = AudioEncoderNode.start()
             if (audioStarted.isFailure) {
                 stopRelayWorkers()
@@ -164,6 +204,7 @@ object CaptureCoordinator {
             }
         } else {
             AudioEncoderNode.setOutputListener(null)
+            audioOutputListenerAttached = false
         }
 
         return StartResult(isReady = true)
@@ -173,6 +214,10 @@ object CaptureCoordinator {
         CameraFeature.setFrameOutputListener(null)
         VideoEncoderNode.setOutputListener(null)
         AudioEncoderNode.setOutputListener(null)
+        frameOutputListenerAttached = false
+        videoOutputListenerAttached = false
+        audioOutputListenerAttached = false
+        capturePathActive = false
         stopRelayWorkers()
         VideoEncoderNode.stop()
         AudioEncoderNode.stop()
@@ -273,10 +318,14 @@ object CaptureCoordinator {
 
     private fun stopRelayWorkers() {
         relayLoopActive = false
+        capturePathActive = false
         cameraRelayThread?.join(200L)
         encoderRelayThread?.join(200L)
         cameraRelayThread = null
         encoderRelayThread = null
+        frameOutputListenerAttached = false
+        videoOutputListenerAttached = false
+        audioOutputListenerAttached = false
 
         synchronized(cameraQueueLock) {
             cameraToEncoderQueue.clear()
