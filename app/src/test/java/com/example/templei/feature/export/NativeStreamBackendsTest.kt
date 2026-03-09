@@ -163,7 +163,7 @@ class NativeStreamBackendsTest {
         )
 
         assertTrue(hint.orEmpty().contains("media ingress is idle"))
-        assertTrue(hint.orEmpty().contains("stubbed"))
+        assertTrue(hint.orEmpty().contains("stub mode"))
     }
 
     @Test

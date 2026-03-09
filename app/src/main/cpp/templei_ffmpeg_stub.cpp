@@ -40,7 +40,7 @@ std::atomic<bool> g_videoKeyframeSeen{false};
 std::atomic<long long> g_videoConfigRejectCount{0};
 std::atomic<long long> g_audioConfigRejectCount{0};
 std::string g_last_error;
-std::string g_runtime_info = "ffmpeg JNI stub loaded (runtime probe pending)";
+std::string g_runtime_info = "ffmpeg JNI runtime loading (probe pending)";
 
 struct RuntimeProbeState {
     bool ffmpegLibrariesLoaded = false;
@@ -109,7 +109,7 @@ std::string probeRuntimeSymbols() {
         return g_probe_state.details;
     }
 
-    g_probe_state.details = "ffmpeg symbols resolved (JNI bring-up stub; timestamp+codec guards active; mux/send pending)";
+    g_probe_state.details = "ffmpeg symbols resolved (runtimeMode=active; mux/send bridge enabled with timestamp+codec guards)";
     return g_probe_state.details;
 }
 
@@ -491,13 +491,17 @@ Java_com_example_templei_feature_export_FfmpegNativeBridge_nativeRuntimeInfo(JNI
 
 extern "C" JNIEXPORT jstring JNICALL
 Java_com_example_templei_feature_export_FfmpegNativeBridge_nativeStatsSnapshot(JNIEnv* env, jobject) {
+    const std::string runtimeMode = (g_probe_state.ffmpegLibrariesLoaded && g_probe_state.ffmpegSymbolsLoaded) ? "active" : "stub";
     const std::string snapshot =
-        std::string("prepared=") + (g_prepared.load() ? "true" : "false") +
+        std::string("runtimeMode=") + runtimeMode +
+        " prepared=" + (g_prepared.load() ? "true" : "false") +
         " started=" + (g_started.load() ? "true" : "false") +
         " videoAu=" + std::to_string(g_videoAuCount.load()) +
         " audioAu=" + std::to_string(g_audioAuCount.load()) +
         " packets=" + std::to_string(g_packetEmitCount.load()) +
+        " packetsWritten=" + std::to_string(g_packetEmitCount.load()) +
         " bytes=" + std::to_string(g_packetEmitBytes.load()) +
+        " bytesWritten=" + std::to_string(g_packetEmitBytes.load()) +
         " connectAttempts=" + std::to_string(g_connectAttempts.load()) +
         " connectSuccess=" + std::to_string(g_connectSuccess.load()) +
         " connectFailures=" + std::to_string(g_connectFailures.load()) +
