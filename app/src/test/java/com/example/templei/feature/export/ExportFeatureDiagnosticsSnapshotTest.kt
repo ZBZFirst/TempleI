@@ -17,5 +17,10 @@ class ExportFeatureDiagnosticsSnapshotTest {
         assertTrue(snapshot.content.contains("startup-${snapshot.runId}.log"))
         assertTrue(snapshot.content.contains("obsInputUrl=srt://192.168.1.50:9000?mode=listener"))
         assertTrue(snapshot.content.contains("transportCallerUrl=srt://192.168.1.50:9000?mode=caller"))
+        assertTrue(snapshot.content.contains("muxPacketsProduced="))
+        assertTrue(snapshot.content.contains("writePacketsFailed="))
+        assertTrue(snapshot.content.contains("consecutiveWriteFailures="))
+        assertTrue(snapshot.content.contains("outputOpened="))
+        assertTrue(snapshot.content.contains("headerWritten="))
     }
 }

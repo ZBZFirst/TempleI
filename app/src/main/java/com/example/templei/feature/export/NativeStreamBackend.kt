@@ -181,7 +181,9 @@ internal fun deriveFfmpegHealthHint(
 
     val videoAu = Regex("""videoAu=(\d+)""").find(statsSnapshot)?.groupValues?.get(1)?.toLongOrNull() ?: -1L
     val audioAu = Regex("""audioAu=(\d+)""").find(statsSnapshot)?.groupValues?.get(1)?.toLongOrNull() ?: -1L
-    val packetCount = Regex("""packets=(\d+)""").find(statsSnapshot)?.groupValues?.get(1)?.toLongOrNull() ?: -1L
+    val packetCount = Regex("""writePacketsSucceeded=(\d+)""").find(statsSnapshot)?.groupValues?.get(1)?.toLongOrNull()
+        ?: Regex("""packets=(\d+)""").find(statsSnapshot)?.groupValues?.get(1)?.toLongOrNull()
+        ?: -1L
     val ptsFixups = Regex("""ptsFixups=(\d+)""").find(statsSnapshot)?.groupValues?.get(1)?.toLongOrNull() ?: -1L
     val avDeltaMaxAbsUs = Regex("""avDeltaMaxAbsUs=(\d+)""").find(statsSnapshot)?.groupValues?.get(1)?.toLongOrNull() ?: -1L
     val runtimeLooksStub = runtimeInfo.contains("runtimeMode=stub", ignoreCase = true) || runtimeInfo.contains("stub", ignoreCase = true)

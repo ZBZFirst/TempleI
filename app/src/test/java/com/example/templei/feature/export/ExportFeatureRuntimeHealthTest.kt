@@ -39,4 +39,13 @@ class ExportFeatureRuntimeHealthTest {
         assertEquals("none", snapshot.lastNativeError)
         assertFalse(snapshot.runtimeActive)
     }
+
+    @Test
+    fun `runtime health parser prefers canonical write packet counter`() {
+        val snapshot = ExportFeature.parseRuntimeHealthSnapshot(
+            "started=true connState=connected stats={writePacketsSucceeded=7 packetsWritten=42 packets=84} runtime={runtimeMode=jni} lastErr={none}",
+        )
+
+        assertEquals(7L, snapshot.packetsWritten)
+    }
 }
