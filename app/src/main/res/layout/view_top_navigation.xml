@@ -4,48 +4,26 @@
     android:layout_height="wrap_content"
     android:orientation="horizontal">
 
-    <!-- Shared top navigation shell used across all screens. -->
+    <!-- Shared top navigation for active Screen 1/2 workflow. -->
     <Button
         android:id="@+id/navButtonScreen1"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_weight="1"
-        android:text="@string/button1text"
-        android:autoSizeTextType="uniform"
-        android:autoSizeMinTextSize="8sp"
         android:autoSizeMaxTextSize="16sp"
-        android:autoSizeStepGranularity="1sp" />
+        android:autoSizeMinTextSize="8sp"
+        android:autoSizeStepGranularity="1sp"
+        android:autoSizeTextType="uniform"
+        android:text="@string/button1text" />
 
     <Button
         android:id="@+id/navButtonScreen2"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_weight="1"
-        android:text="@string/button2text"
-        android:autoSizeTextType="uniform"
-        android:autoSizeMinTextSize="8sp"
         android:autoSizeMaxTextSize="16sp"
-        android:autoSizeStepGranularity="1sp" />
-
-    <Button
-        android:id="@+id/navButtonScreen3"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_weight="1"
-        android:text="@string/button3text"
-        android:autoSizeTextType="uniform"
         android:autoSizeMinTextSize="8sp"
-        android:autoSizeMaxTextSize="16sp"
-        android:autoSizeStepGranularity="1sp" />
-
-    <Button
-        android:id="@+id/navButtonScreen4"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_weight="1"
-        android:text="@string/button4text"
+        android:autoSizeStepGranularity="1sp"
         android:autoSizeTextType="uniform"
-        android:autoSizeMinTextSize="8sp"
-        android:autoSizeMaxTextSize="16sp"
-        android:autoSizeStepGranularity="1sp" />
+        android:text="@string/button2text" />
 </LinearLayout>
