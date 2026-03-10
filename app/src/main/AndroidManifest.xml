@@ -22,16 +22,14 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.TempleI">
 
-        <!-- Shell activities for UI scaffolding screens. -->
         <service
             android:name=".feature.export.StreamSessionService"
             android:exported="false"
             android:foregroundServiceType="camera|microphone" />
 
+        <!-- Active activities while Screen 3/4 remain archived from runtime flow. -->
         <activity android:name=".Screen1Activity" android:exported="false" />
         <activity android:name=".Screen2Activity" android:exported="false" />
-        <activity android:name=".Screen3Activity" android:exported="false" />
-        <activity android:name=".Screen4Activity" android:exported="false" />
 
         <activity
             android:name=".MainActivity"

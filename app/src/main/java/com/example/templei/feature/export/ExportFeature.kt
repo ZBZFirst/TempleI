@@ -25,7 +25,7 @@ object ExportFeature {
         val host: String = "",
         val port: Int = DEFAULT_PORT,
         val profile: String = PROFILE_BALANCED,
-        val streamMode: CaptureCoordinator.StreamPathMode = CaptureCoordinator.StreamPathMode.FullAv,
+        val streamMode: CaptureCoordinator.StreamPathMode = CaptureCoordinator.StreamPathMode.ConnectionOnly,
     )
 
     data class ValidationResult(
@@ -36,6 +36,26 @@ object ExportFeature {
     data class StreamResult(
         val state: SessionState,
         val error: String? = null,
+    )
+
+    data class EndpointValidationSnapshot(
+        val isValid: Boolean,
+        val message: String,
+        val obsInputUrl: String,
+        val transportCallerUrl: String,
+    )
+
+    data class RuntimeHealthSnapshot(
+        val runtimeMode: String,
+        val connectionState: String,
+        val packetsWritten: Long,
+        val lastNativeError: String,
+        val runtimeActive: Boolean,
+    )
+
+    data class DiagnosticsSnapshot(
+        val runId: String,
+        val content: String,
     )
 
     private const val PREFS_NAME = "obs_stream_prefs"
@@ -53,11 +73,14 @@ object ExportFeature {
     private var lastConnectionTest: String = "Not tested"
     private var lastDiagnosticSummary: String = "diagnostics pending"
     private var lastDiagnosticAtMs: Long = 0
+    private var lastEffectiveTransportUrl: String = "n/a"
 
     private const val DIAGNOSTIC_REFRESH_INTERVAL_MS = 1_000L
     private const val FRAME_BUDGET_US = 33_333L
     private const val CAMERA_QUEUE_WARN_DEPTH = 2
     private const val ENCODER_QUEUE_WARN_DEPTH = 16
+    private const val PACKET_OUTPUT_WARNING_THRESHOLD = 24L
+    private const val STARTUP_CAPTURE_SECONDS = 30
 
     @Volatile
     private var lastStageGateSignature: String = ""
@@ -72,10 +95,10 @@ object ExportFeature {
             profile = prefs.getString(KEY_PROFILE, PROFILE_BALANCED).orEmpty(),
             streamMode = runCatching {
                 CaptureCoordinator.StreamPathMode.valueOf(
-                    prefs.getString(KEY_STREAM_MODE, CaptureCoordinator.StreamPathMode.FullAv.name)
-                        ?: CaptureCoordinator.StreamPathMode.FullAv.name,
+                    prefs.getString(KEY_STREAM_MODE, CaptureCoordinator.StreamPathMode.ConnectionOnly.name)
+                        ?: CaptureCoordinator.StreamPathMode.ConnectionOnly.name,
                 )
-            }.getOrDefault(CaptureCoordinator.StreamPathMode.FullAv),
+            }.getOrDefault(CaptureCoordinator.StreamPathMode.ConnectionOnly),
         )
     }
 
@@ -97,11 +120,36 @@ object ExportFeature {
         lastConnectionTest = "Not tested"
         lastDiagnosticSummary = "diagnostics pending"
         lastDiagnosticAtMs = 0
+        lastEffectiveTransportUrl = "n/a"
         return reset
     }
 
+    fun endpointValidationSnapshot(config: ObsStreamConfig): EndpointValidationSnapshot {
+        val obsInputSpec = config.toObsInputSpec()
+        val transportSpec = config.toTransportEndpointSpec()
+        val obsInputUrl = obsInputSpec.toSrtUrl()
+        val transportCallerUrl = transportSpec.toSrtUrl()
+
+        val message = when {
+            obsInputSpec.host.isBlank() || transportSpec.host.isBlank() -> "host missing"
+            obsInputSpec.port !in 1..65535 || transportSpec.port !in 1..65535 -> "port invalid"
+            obsInputSpec.mode != "listener" -> "OBS Input URL must use mode=listener"
+            transportSpec.mode != "caller" -> "Android transport must use mode=caller"
+            !obsInputUrl.contains("mode=listener") -> "OBS Input URL malformed: missing mode=listener"
+            !transportCallerUrl.contains("mode=caller") -> "transport URL malformed: missing mode=caller"
+            else -> "ready"
+        }
+
+        return EndpointValidationSnapshot(
+            isValid = message == "ready",
+            message = message,
+            obsInputUrl = obsInputUrl,
+            transportCallerUrl = transportCallerUrl,
+        )
+    }
+
     fun buildObsUrl(config: ObsStreamConfig): String {
-        return config.toEndpointSpec().toSrtUrl()
+        return config.toObsInputSpec().toSrtUrl()
     }
 
     fun validateConfig(config: ObsStreamConfig): ValidationResult {
@@ -128,6 +176,7 @@ object ExportFeature {
         lastConnectionTest = if (preflightMessage != null) {
             preflightMessage
         } else {
+            lastEffectiveTransportUrl = config.toTransportEndpointSpec().toSrtUrl()
             "endpoint configuration valid"
         }
         return lastConnectionTest
@@ -146,14 +195,31 @@ object ExportFeature {
         NativeStreamBackends.resetIngressRuntimeStats()
         lastDiagnosticSummary = "diagnostics pending"
         lastDiagnosticAtMs = 0
-        val started = transportGateway.startStream(config.toEndpointSpec(), config.streamMode)
+        val started = transportGateway.startStream(config.toTransportEndpointSpec(), config.streamMode)
         return if (started.isSuccess) {
-            sessionState = SessionState.Streaming
-            lastError = ""
-            StreamResult(state = sessionState)
+            val runtimeHealth = runtimeHealthSnapshot()
+            if (!runtimeHealth.runtimeActive) {
+                sessionState = SessionState.Faulted
+                val remediation = if (runtimeHealth.runtimeMode.equals("stub", ignoreCase = true)) {
+                    "runtimeMode=stub; install/enable native runtime before streaming"
+                } else {
+                    "runtime mode unavailable or inactive (${runtimeHealth.runtimeMode}); verify native runtime binding"
+                }
+                lastError = "start blocked: $remediation"
+                lastConnectionTest = "connection failed: $remediation"
+                transportGateway.stopStream()
+                StreamResult(state = sessionState, error = lastError)
+            } else {
+                sessionState = SessionState.Streaming
+                lastError = ""
+                lastEffectiveTransportUrl = config.toTransportEndpointSpec().toSrtUrl()
+                lastConnectionTest = "CONNECTION SUCCESSFUL: SRT caller connected to OBS listener"
+                StreamResult(state = sessionState)
+            }
         } else {
             sessionState = SessionState.Faulted
             lastError = "start transport failed: ${started.exceptionOrNull()?.message.orEmpty()}"
+            lastConnectionTest = "connection failed: ${started.exceptionOrNull()?.message.orEmpty()}"
             StreamResult(state = sessionState, error = lastError)
         }
     }
@@ -188,12 +254,48 @@ object ExportFeature {
 
     fun lastConnectionTest(): String = lastConnectionTest
 
+    fun lastEffectiveTransportUrl(): String = lastEffectiveTransportUrl
+
+    fun runtimeHealthSnapshot(): RuntimeHealthSnapshot {
+        return parseRuntimeHealthSnapshot(transportGateway.diagnosticsSummary())
+    }
+
+    fun createDiagnosticsSnapshot(config: ObsStreamConfig, nowMs: Long = System.currentTimeMillis()): DiagnosticsSnapshot {
+        val runId = "run-$nowMs"
+        val obsInputUrl = buildObsUrl(config)
+        val callerUrl = config.toTransportEndpointSpec().toSrtUrl()
+        val backendDiagnostics = transportGateway.diagnosticsSummary()
+        val runtime = parseRuntimeHealthSnapshot(backendDiagnostics)
+        val stageDiagnostics = refreshDiagnosticsSnapshotIfDue(nowMs)
+        val adbFilter = "TempleI-ExportFeature:V TsMuxerNode:V SrtTransportNode:V NativeStreamBackend:V VideoEncoderNode:V AudioEncoderNode:V *:S"
+        val adbCaptureCommand = "adb logcat -v time $adbFilter | head -n 200 > startup-$runId.log"
+
+        val content = buildString {
+            appendLine("runId=$runId")
+            appendLine("capturedAtMs=$nowMs")
+            appendLine("captureWindowSeconds=$STARTUP_CAPTURE_SECONDS")
+            appendLine("obsInputUrl=$obsInputUrl")
+            appendLine("transportCallerUrl=$callerUrl")
+            appendLine("runtimeMode=${runtime.runtimeMode}")
+            appendLine("connectionState=${runtime.connectionState}")
+            appendLine("packetsWritten=${runtime.packetsWritten}")
+            appendLine("lastNativeError=${runtime.lastNativeError}")
+            appendLine("adbFilter=$adbFilter")
+            appendLine("adbCaptureCommand=$adbCaptureCommand")
+            appendLine("backendDiagnostics={$backendDiagnostics}")
+            appendLine("pipelineDiagnostics={$stageDiagnostics}")
+            appendLine("interopStatus={${interoperabilityStatus(config)}}")
+        }
+
+        return DiagnosticsSnapshot(runId = runId, content = content)
+    }
+
     fun pipelineMetricsSnapshot(): StreamPipelineMetrics.Snapshot = StreamPipelineMetrics.snapshot()
 
     fun interoperabilityStatus(config: ObsStreamConfig): String {
         val host = config.host.trim()
         if (host.isEmpty()) {
-            return "set OBS host and port, then copy Input into OBS Media Source"
+            return "set OBS host and port, then copy Input URL into OBS Media Source"
         }
 
         if (config.port !in 1..65535) {
@@ -216,6 +318,13 @@ object ExportFeature {
         val connectionState = deriveConnectionState(backendDiagnostics)
         val mediaIngressStatus = deriveMediaIngressStatus(config, videoStats, audioStats)
         val packetWriteStatus = derivePacketWriteStatus(backendDiagnostics)
+        val packetCount = parsePacketCount(backendDiagnostics)
+        val packetWriteWarning = derivePacketWriteWarning(
+            muxVideoIngest = pipelineSnapshot.muxVideoIngestCount,
+            muxAudioIngest = pipelineSnapshot.muxAudioIngestCount,
+            packetCount = packetCount,
+            warnThreshold = PACKET_OUTPUT_WARNING_THRESHOLD,
+        )
         val ingressMismatch = deriveIngressMismatch(
             streamMode = config.streamMode,
             videoEncodedAu = videoStats.encodedAccessUnitCount,
@@ -244,7 +353,7 @@ object ExportFeature {
                         audioIngressCalls = captureStats.audioIngressCalls,
                         muxVideoIngest = pipelineSnapshot.muxVideoIngestCount,
                         muxAudioIngest = pipelineSnapshot.muxAudioIngestCount,
-                        packetCount = parsePacketCount(backendDiagnostics),
+                        packetCount = packetCount,
                         connectionState = connectionState,
                         packetWriteStatus = packetWriteStatus,
                         interopIssue = interopIssue,
@@ -252,9 +361,14 @@ object ExportFeature {
                     ),
                 )
                 logStageGateTransitionIfNeeded(stageGate)
-                "streaming health: mode=${config.streamMode.name} media=$mediaIngressStatus packetWrite=$packetWriteStatus conn=$connectionState " +
+                val connectionGate = if (connectionState == "connected" && packetCount > 0L && packetWriteStatus == "active") {
+                    "STREAM HEALTHY"
+                } else {
+                    "stream not healthy yet"
+                }
+                "$connectionGate · streaming health: mode=${config.streamMode.name} media=$mediaIngressStatus packetWrite=$packetWriteStatus conn=$connectionState packets=$packetCount " +
                     "stage{${stageGate.summary}} firstFailedStage=${stageGate.firstFailedStage} reasonCode=${stageGate.reasonCode} " +
-                    "ingressMismatch=$ingressMismatch pressure=$queuePressure issue=$interopIssue " +
+                    "ingressMismatch=$ingressMismatch pressure=$queuePressure packetWarning=$packetWriteWarning issue=$interopIssue " +
                     "camera(enqueued=${captureStats.cameraFramesEnqueued},dequeued=${captureStats.cameraFramesDequeued},dropped=${captureStats.cameraFramesDropped},depth=${captureStats.cameraQueueDepth}) " +
                     "video(frames=${videoStats.framesEncoded},encodedAu=${videoStats.encodedAccessUnitCount},keyframes=${videoStats.keyFrameCount},lastPtsUs=${videoStats.lastVideoPresentationTimeUs},queued=${videoStats.framesQueuedIn},dropNoInput=${videoStats.framesDroppedNoInputBuffer},state=${videoStats.state}) " +
                     "audio(frames=${audioStats.framesEncoded},encodedAu=${audioStats.encodedAccessUnitCount},codecConfigEvents=${audioStats.codecConfigEventCount},lastPtsUs=${audioStats.lastAudioPresentationTimeUs},state=${audioStats.state}) " +
@@ -267,9 +381,19 @@ object ExportFeature {
 
     fun nextStreamMode(current: CaptureCoordinator.StreamPathMode): CaptureCoordinator.StreamPathMode {
         return when (current) {
-            CaptureCoordinator.StreamPathMode.FullAv -> CaptureCoordinator.StreamPathMode.VideoOnly
+            CaptureCoordinator.StreamPathMode.ConnectionOnly -> CaptureCoordinator.StreamPathMode.VideoOnly
             CaptureCoordinator.StreamPathMode.VideoOnly -> CaptureCoordinator.StreamPathMode.AudioOnly
             CaptureCoordinator.StreamPathMode.AudioOnly -> CaptureCoordinator.StreamPathMode.FullAv
+            CaptureCoordinator.StreamPathMode.FullAv -> CaptureCoordinator.StreamPathMode.ConnectionOnly
+        }
+    }
+
+    fun streamModeLabel(mode: CaptureCoordinator.StreamPathMode): String {
+        return when (mode) {
+            CaptureCoordinator.StreamPathMode.ConnectionOnly -> "No Video or Audio, Connection Only"
+            CaptureCoordinator.StreamPathMode.VideoOnly -> "Video Only"
+            CaptureCoordinator.StreamPathMode.AudioOnly -> "Audio Only"
+            CaptureCoordinator.StreamPathMode.FullAv -> "Video + Audio"
         }
     }
 
@@ -281,6 +405,7 @@ object ExportFeature {
         audioStats: AudioEncoderNode.RuntimeStats,
     ): String {
         return when (config.streamMode) {
+            CaptureCoordinator.StreamPathMode.ConnectionOnly -> "n/a"
             CaptureCoordinator.StreamPathMode.VideoOnly -> if (videoStats.encodedAccessUnitCount > 0) "flowing" else "stalled"
             CaptureCoordinator.StreamPathMode.AudioOnly -> if (audioStats.encodedAccessUnitCount > 0) "flowing" else "stalled"
             CaptureCoordinator.StreamPathMode.FullAv -> if (videoStats.encodedAccessUnitCount > 0 && audioStats.encodedAccessUnitCount > 0) "flowing" else "stalled"
@@ -305,6 +430,7 @@ object ExportFeature {
         audioIngressCalls: Long,
     ): String {
         return when (streamMode) {
+            CaptureCoordinator.StreamPathMode.ConnectionOnly -> "none"
             CaptureCoordinator.StreamPathMode.VideoOnly -> if (videoEncodedAu > 0L && videoIngressCalls == 0L) "video-unmapped" else "none"
             CaptureCoordinator.StreamPathMode.AudioOnly -> if (audioEncodedAu > 0L && audioIngressCalls == 0L) "audio-unmapped" else "none"
             CaptureCoordinator.StreamPathMode.FullAv -> when {
@@ -328,6 +454,23 @@ object ExportFeature {
         }
     }
 
+    internal fun derivePacketWriteWarning(
+        muxVideoIngest: Long,
+        muxAudioIngest: Long,
+        packetCount: Long,
+        warnThreshold: Long,
+    ): String {
+        val ingressTotal = muxVideoIngest + muxAudioIngest
+        if (packetCount > 0L) {
+            return "none"
+        }
+        return if (ingressTotal >= warnThreshold) {
+            "ingress-active-without-packets"
+        } else {
+            "warming-up"
+        }
+    }
+
     private fun parsePacketCount(backendDiagnostics: String): Long {
         return Regex("""packetsWritten=(\d+)""").find(backendDiagnostics)?.groupValues?.get(1)?.toLongOrNull()
             ?: Regex("""packets=(\d+)""").find(backendDiagnostics)?.groupValues?.get(1)?.toLongOrNull()
@@ -345,6 +488,32 @@ object ExportFeature {
     private fun deriveConnectionState(backendDiagnostics: String): String {
         val match = Regex("""connState=([a-zA-Z]+)""").find(backendDiagnostics)
         return match?.groupValues?.getOrNull(1)?.lowercase() ?: "unknown"
+    }
+
+    internal fun parseRuntimeHealthSnapshot(backendDiagnostics: String): RuntimeHealthSnapshot {
+        val runtimeMode = Regex("""runtime=\{[^}]*runtimeMode=([a-zA-Z_]+)""")
+            .find(backendDiagnostics)
+            ?.groupValues
+            ?.getOrNull(1)
+            ?.lowercase()
+            ?: "unknown"
+        val connectionState = deriveConnectionState(backendDiagnostics)
+        val packetsWritten = parsePacketCount(backendDiagnostics)
+        val lastNativeError = Regex("""lastErr=\{([^}]*)\}""")
+            .find(backendDiagnostics)
+            ?.groupValues
+            ?.getOrNull(1)
+            ?.ifBlank { "none" }
+            ?: "none"
+        val runtimeActive = runtimeMode != "unknown" && runtimeMode != "stub"
+
+        return RuntimeHealthSnapshot(
+            runtimeMode = runtimeMode,
+            connectionState = connectionState,
+            packetsWritten = packetsWritten,
+            lastNativeError = lastNativeError,
+            runtimeActive = runtimeActive,
+        )
     }
 
     private fun deriveInteropIssue(backendDiagnostics: String): String {
@@ -373,7 +542,16 @@ object ExportFeature {
         return lastDiagnosticSummary
     }
 
-    private fun ObsStreamConfig.toEndpointSpec(): ObsEndpointSpec {
+    private fun ObsStreamConfig.toObsInputSpec(): ObsEndpointSpec {
+        return ObsEndpointSpec(
+            host = host.trim(),
+            port = port,
+            latencyMs = 120,
+            mode = "listener",
+        )
+    }
+
+    private fun ObsStreamConfig.toTransportEndpointSpec(): ObsEndpointSpec {
         return ObsEndpointSpec(
             host = host.trim(),
             port = port,
@@ -385,13 +563,9 @@ object ExportFeature {
     private fun transportAvailabilityMessage(): String = transportGateway.availabilityMessage()
 
     private fun preflightStartMessage(config: ObsStreamConfig): String? {
-        val host = config.host.trim()
-        if (host.isEmpty()) {
-            return "preflight failed: host missing"
-        }
-
-        if (config.port !in 1..65535) {
-            return "preflight failed: port invalid"
+        val endpointValidation = endpointValidationSnapshot(config)
+        if (!endpointValidation.isValid) {
+            return "preflight failed: ${endpointValidation.message}"
         }
 
         if (!transportGateway.isAvailable()) {
@@ -471,10 +645,20 @@ internal data class InteropStageGate(
 )
 
 internal fun deriveInteropStageGate(inputs: InteropStageInputs): InteropStageGate {
-    val captureOk = inputs.streamMode == CaptureCoordinator.StreamPathMode.AudioOnly || inputs.cameraFramesEnqueued > 0
-    val videoEncodeOk = inputs.streamMode == CaptureCoordinator.StreamPathMode.AudioOnly || inputs.videoEncodedAu > 0
-    val audioEncodeOk = inputs.streamMode == CaptureCoordinator.StreamPathMode.VideoOnly || inputs.audioEncodedAu > 0
+    val captureOk =
+        inputs.streamMode == CaptureCoordinator.StreamPathMode.AudioOnly ||
+            inputs.streamMode == CaptureCoordinator.StreamPathMode.ConnectionOnly ||
+            inputs.cameraFramesEnqueued > 0
+    val videoEncodeOk =
+        inputs.streamMode == CaptureCoordinator.StreamPathMode.AudioOnly ||
+            inputs.streamMode == CaptureCoordinator.StreamPathMode.ConnectionOnly ||
+            inputs.videoEncodedAu > 0
+    val audioEncodeOk =
+        inputs.streamMode == CaptureCoordinator.StreamPathMode.VideoOnly ||
+            inputs.streamMode == CaptureCoordinator.StreamPathMode.ConnectionOnly ||
+            inputs.audioEncodedAu > 0
     val nativeIngressOk = when (inputs.streamMode) {
+        CaptureCoordinator.StreamPathMode.ConnectionOnly -> true
         CaptureCoordinator.StreamPathMode.VideoOnly -> inputs.videoIngressCalls > 0
         CaptureCoordinator.StreamPathMode.AudioOnly -> inputs.audioIngressCalls > 0
         CaptureCoordinator.StreamPathMode.FullAv -> inputs.videoIngressCalls > 0 && inputs.audioIngressCalls > 0
