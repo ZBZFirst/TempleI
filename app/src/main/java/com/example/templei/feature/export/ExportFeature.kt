@@ -101,7 +101,7 @@ object ExportFeature {
     }
 
     fun buildObsUrl(config: ObsStreamConfig): String {
-        return config.toEndpointSpec().toSrtUrl()
+        return config.toObsInputSpec().toSrtUrl()
     }
 
     fun validateConfig(config: ObsStreamConfig): ValidationResult {
@@ -146,14 +146,16 @@ object ExportFeature {
         NativeStreamBackends.resetIngressRuntimeStats()
         lastDiagnosticSummary = "diagnostics pending"
         lastDiagnosticAtMs = 0
-        val started = transportGateway.startStream(config.toEndpointSpec(), config.streamMode)
+        val started = transportGateway.startStream(config.toTransportEndpointSpec(), config.streamMode)
         return if (started.isSuccess) {
             sessionState = SessionState.Streaming
             lastError = ""
+            lastConnectionTest = "CONNECTION SUCCESSFUL: SRT caller connected to OBS listener"
             StreamResult(state = sessionState)
         } else {
             sessionState = SessionState.Faulted
             lastError = "start transport failed: ${started.exceptionOrNull()?.message.orEmpty()}"
+            lastConnectionTest = "connection failed: ${started.exceptionOrNull()?.message.orEmpty()}"
             StreamResult(state = sessionState, error = lastError)
         }
     }
@@ -252,7 +254,8 @@ object ExportFeature {
                     ),
                 )
                 logStageGateTransitionIfNeeded(stageGate)
-                "streaming health: mode=${config.streamMode.name} media=$mediaIngressStatus packetWrite=$packetWriteStatus conn=$connectionState " +
+                val connectionGate = if (connectionState == "connected") "CONNECTION SUCCESSFUL" else "connection pending"
+                "$connectionGate · streaming health: mode=${config.streamMode.name} media=$mediaIngressStatus packetWrite=$packetWriteStatus conn=$connectionState " +
                     "stage{${stageGate.summary}} firstFailedStage=${stageGate.firstFailedStage} reasonCode=${stageGate.reasonCode} " +
                     "ingressMismatch=$ingressMismatch pressure=$queuePressure issue=$interopIssue " +
                     "camera(enqueued=${captureStats.cameraFramesEnqueued},dequeued=${captureStats.cameraFramesDequeued},dropped=${captureStats.cameraFramesDropped},depth=${captureStats.cameraQueueDepth}) " +
@@ -373,7 +376,16 @@ object ExportFeature {
         return lastDiagnosticSummary
     }
 
-    private fun ObsStreamConfig.toEndpointSpec(): ObsEndpointSpec {
+    private fun ObsStreamConfig.toObsInputSpec(): ObsEndpointSpec {
+        return ObsEndpointSpec(
+            host = host.trim(),
+            port = port,
+            latencyMs = 120,
+            mode = "listener",
+        )
+    }
+
+    private fun ObsStreamConfig.toTransportEndpointSpec(): ObsEndpointSpec {
         return ObsEndpointSpec(
             host = host.trim(),
             port = port,

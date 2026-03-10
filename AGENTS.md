@@ -17,7 +17,7 @@ Deliver a reliable real-time video feed from Android into OBS using:
 
 ### Step A — Fix and validate endpoint handshake path
 1. Add explicit URL validation before start:
-   - ensure URL query contains `mode=caller`
+   - ensure OBS Input URL uses `mode=listener` and Android transport uses `mode=caller`
    - ensure host/port are non-empty/valid
 2. Surface a hard-blocking UI error if malformed endpoint is detected.
 3. Add a visible "last effective URL" field in Screen 2 status to avoid copy/paste corruption.
