@@ -193,7 +193,7 @@ object ExportFeature {
     fun interoperabilityStatus(config: ObsStreamConfig): String {
         val host = config.host.trim()
         if (host.isEmpty()) {
-            return "set OBS host and port, then copy Input into OBS Media Source"
+            return "set OBS host and port, then copy Input URL into OBS Media Source"
         }
 
         if (config.port !in 1..65535) {
