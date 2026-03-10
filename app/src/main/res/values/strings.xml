@@ -25,8 +25,8 @@
     <string name="obs_button_preset_reset">Load/Reset Preset</string>
 
     <string name="obs_section_b_title">Section B · Stream Controls</string>
-    <string name="obs_section_b_summary">Generate OBS Media Source input, toggle stream path (audio/video/both), and run Start/Stop controls.</string>
-    <string name="obs_button_show_input">Show OBS Input String</string>
+    <string name="obs_section_b_summary">Generate OBS Media Source Input URL, toggle stream path (audio/video/both), and run Start/Stop controls.</string>
+    <string name="obs_button_show_input">Show OBS Input URL</string>
     <string name="obs_button_toggle_profile">Toggle Stream Path (A/V/Both)</string>
     <string name="obs_button_start_stream">Start Stream</string>
     <string name="obs_button_stop_stream">Stop Stream</string>
@@ -39,7 +39,7 @@
     <string name="obs_last_error_placeholder">Last Error: none</string>
     <string name="obs_interop_placeholder">Interop: not evaluated</string>
 
-    <string name="obs_setup_summary_value">Media Source\nLocal File = Off\nInput = %1$s\nInput Format = mpegts\nTransport = srt\nStream Path = %2$s</string>
+    <string name="obs_setup_summary_value">Media Source\nLocal File = Off\nInput URL = %1$s\nInput Format = mpegts\nTransport = srt\nStream Path = %2$s</string>
     <string name="obs_session_state_value">Session State: %1$s</string>
     <string name="obs_validation_value">Validation: %1$s</string>
     <string name="obs_connection_value">Last Test: %1$s</string>
@@ -54,8 +54,8 @@
     <string name="obs_save_action">Save</string>
     <string name="obs_cancel_action">Cancel</string>
     <string name="obs_ok_action">OK</string>
-    <string name="obs_input_dialog_title">OBS Media Source Input</string>
-    <string name="obs_input_dialog_message">Use this in OBS Media Source:\n\nLocal File: Off\nInput: %1$s\nInput Format: mpegts</string>
+    <string name="obs_input_dialog_title">OBS Media Source Input URL</string>
+    <string name="obs_input_dialog_message">Use this URL in OBS Media Source:\n\nLocal File: Off\nInput URL: %1$s\nInput Format: mpegts</string>
     <string name="obs_service_unavailable">Stream service unavailable. Try again.</string>
     <string name="obs_service_channel_name">OBS Stream Session</string>
     <string name="obs_service_notification_title">TempleI stream session</string>
