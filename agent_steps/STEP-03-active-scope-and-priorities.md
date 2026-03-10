@@ -6,14 +6,20 @@
 Keep delivery focused on Screen 2 reliability and operator clarity.
 
 ## Checklist (How to accomplish)
-- [ ] Route engineering effort to Screen 2 ingest/setup/control diagnostics.
-- [ ] Treat Screen 3/4 changes as deferred unless explicitly requested.
-- [ ] When in conflict, prioritize stream stability over non-core enhancements.
+- [x] Route engineering effort to Screen 2 ingest/setup/control diagnostics.
+- [x] Treat Screen 3/4 changes as deferred unless explicitly requested.
+- [x] When in conflict, prioritize stream stability over non-core enhancements.
 
 ## Codebase Reflection (What proves it is done)
-- [ ] AGENTS guidance states Screen 2 priority.
-- [ ] PR scope and changed files mainly target Screen 2 path.
-- [ ] Deferred non-core work is tracked as follow-up notes.
+- [x] AGENTS guidance states Screen 2 priority.
+- [x] Runtime launch paths to Screen 3/4 were removed from active nav and manifest registrations.
+- [x] Deferred non-core work remains isolated to archive-only files.
+
+## Archive status update
+- Screen 3/4 entry points were archived from active runtime flow by:
+  - removing Screen 3/4 buttons from main menu and top navigation layouts,
+  - removing Screen 3/4 destinations from `TopNavigation`,
+  - removing Screen 3/4 activity declarations from `AndroidManifest.xml`.
 
 ## Verification notes
 - Use `git diff --name-only` and confirm scope concentration under Screen 2/export pipeline files.
