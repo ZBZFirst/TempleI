@@ -1,18 +1,25 @@
 package com.example.templei
 
 import android.app.AlertDialog
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.ComponentName
 import android.content.Context
+import java.io.File
 import android.content.Intent
 import android.content.ServiceConnection
 import android.os.Bundle
 import android.os.IBinder
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import android.text.InputType
 import android.widget.Button
 import android.widget.EditText
 import android.widget.TextView
 import androidx.activity.ComponentActivity
 import androidx.activity.enableEdgeToEdge
+import com.example.templei.feature.export.CaptureCoordinator
 import com.example.templei.feature.export.ExportFeature
 import com.example.templei.feature.export.StreamSessionService
 import com.example.templei.ui.navigation.TopNavigation
@@ -29,8 +36,16 @@ class Screen2Activity : ComponentActivity() {
     private lateinit var connectionResultText: TextView
     private lateinit var lastErrorText: TextView
     private lateinit var interopStatusText: TextView
+    private lateinit var runtimeHealthText: TextView
+    private lateinit var lastEffectiveUrlText: TextView
+    private lateinit var startupProgressText: TextView
+    private lateinit var toggleStreamPathButton: Button
+    private lateinit var startStreamButton: Button
+    private lateinit var copyDiagnosticsButton: Button
 
     private var currentConfig = ExportFeature.ObsStreamConfig()
+    private var isStartInFlight = false
+    private val startupPhaseLines = mutableListOf<String>()
     private var streamSessionBinder: StreamSessionService.LocalBinder? = null
     private var isServiceBound = false
 
@@ -77,6 +92,12 @@ class Screen2Activity : ComponentActivity() {
         connectionResultText = findViewById(R.id.connectionResultText)
         lastErrorText = findViewById(R.id.lastErrorText)
         interopStatusText = findViewById(R.id.interopStatusText)
+        runtimeHealthText = findViewById(R.id.runtimeHealthText)
+        lastEffectiveUrlText = findViewById(R.id.lastEffectiveUrlText)
+        startupProgressText = findViewById(R.id.startupProgressText)
+        toggleStreamPathButton = findViewById(R.id.setupFailureDomainsButton)
+        startStreamButton = findViewById(R.id.setupContractsButton)
+        copyDiagnosticsButton = findViewById(R.id.copyDiagnosticsButton)
     }
 
     private fun bindButtons() {
@@ -93,9 +114,12 @@ class Screen2Activity : ComponentActivity() {
             }
 
             val result = ExportFeature.validateConfig(currentConfig)
-            ExportFeature.testEndpoint(currentConfig)
+            val endpointMessage = ExportFeature.testEndpoint(currentConfig)
             if (result.isValid) {
                 ExportFeature.saveConfig(this, currentConfig)
+            }
+            if (endpointMessage.startsWith("preflight failed:")) {
+                showBlockingEndpointError(endpointMessage)
             }
             renderStatus()
         }
@@ -120,6 +144,12 @@ class Screen2Activity : ComponentActivity() {
                 return@setOnClickListener
             }
 
+            startupPhaseLines.clear()
+            appendStartupPhase(getString(R.string.obs_startup_phase_start_requested))
+            isStartInFlight = true
+            appendStartupPhase(getString(R.string.obs_startup_phase_starting))
+            renderStatus()
+
             val binder = streamSessionBinder
             val result = if (binder != null) {
                 binder.startSession(currentConfig)
@@ -127,13 +157,33 @@ class Screen2Activity : ComponentActivity() {
                 ExportFeature.markFault(getString(R.string.obs_service_unavailable))
             }
 
+            isStartInFlight = false
+            appendStartupPhase(getString(R.string.obs_startup_phase_result, result.state.name.lowercase()))
+
             if (result.state == ExportFeature.SessionState.Streaming) {
                 ExportFeature.saveConfig(this, currentConfig)
+            } else if (result.state == ExportFeature.SessionState.Faulted) {
+                appendStartupPhase(result.error ?: getString(R.string.obs_endpoint_malformed_generic))
+                showBlockingEndpointError(result.error ?: getString(R.string.obs_endpoint_malformed_generic))
             }
             renderStatus()
         }
         findViewById<Button>(R.id.setupImplementationMapButton).setOnClickListener {
             streamSessionBinder?.stopSession() ?: ExportFeature.stopStream()
+            isStartInFlight = false
+            appendStartupPhase(getString(R.string.obs_startup_phase_stopped))
+            renderStatus()
+        }
+        copyDiagnosticsButton.setOnClickListener {
+            val snapshot = ExportFeature.createDiagnosticsSnapshot(currentConfig)
+            val diagnosticsDir = File(filesDir, "diagnostics").apply { mkdirs() }
+            val outputFile = File(diagnosticsDir, "startup-${snapshot.runId}.log")
+            outputFile.writeText(snapshot.content)
+
+            val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            clipboard.setPrimaryClip(ClipData.newPlainText("TempleI diagnostics", snapshot.content))
+
+            appendStartupPhase(getString(R.string.obs_diagnostics_snapshot_copied, snapshot.runId, outputFile.absolutePath))
             renderStatus()
         }
     }
@@ -209,21 +259,62 @@ class Screen2Activity : ComponentActivity() {
 
     private fun renderStatus() {
         val obsUrl = ExportFeature.buildObsUrl(currentConfig)
+        val endpointSnapshot = ExportFeature.endpointValidationSnapshot(currentConfig)
         val sessionState = ExportFeature.currentState().name.lowercase()
         val validationMessage = ExportFeature.lastValidation()
         val connectionMessage = ExportFeature.lastConnectionTest()
         val errorText = ExportFeature.lastError().ifBlank { getString(R.string.obs_no_error) }
         val interopText = ExportFeature.interoperabilityStatus(currentConfig)
+        val runtimeHealth = ExportFeature.runtimeHealthSnapshot()
+        val currentState = ExportFeature.currentState()
 
         obsSetupSummaryText.text = getString(
             R.string.obs_setup_summary_value,
             obsUrl,
-            currentConfig.streamMode.name,
+            ExportFeature.streamModeLabel(currentConfig.streamMode),
         )
+        toggleStreamPathButton.text = when (currentConfig.streamMode) {
+            CaptureCoordinator.StreamPathMode.ConnectionOnly -> "Toggle to Video or Audio or Both"
+            CaptureCoordinator.StreamPathMode.VideoOnly -> "Toggle to Audio or Both or Connection Only"
+            CaptureCoordinator.StreamPathMode.AudioOnly -> "Toggle to Both or Connection Only or Video"
+            CaptureCoordinator.StreamPathMode.FullAv -> "Toggle to Connection Only or Video or Audio"
+        }
         sessionStateText.text = getString(R.string.obs_session_state_value, sessionState)
+        startStreamButton.isEnabled = !isStartInFlight && currentState != ExportFeature.SessionState.Starting
         validationResultText.text = getString(R.string.obs_validation_value, validationMessage)
         connectionResultText.text = getString(R.string.obs_connection_value, connectionMessage)
         lastErrorText.text = getString(R.string.obs_last_error_value, errorText)
         interopStatusText.text = getString(R.string.obs_interop_value, interopText)
+        runtimeHealthText.text = getString(
+            R.string.obs_runtime_health_value,
+            runtimeHealth.runtimeMode,
+            runtimeHealth.connectionState,
+            runtimeHealth.packetsWritten,
+            runtimeHealth.lastNativeError,
+        )
+        lastEffectiveUrlText.text = getString(
+            R.string.obs_last_effective_url_value,
+            ExportFeature.lastEffectiveTransportUrl(),
+            endpointSnapshot.transportCallerUrl,
+        )
+        startupProgressText.text = getString(
+            R.string.obs_startup_progress_value,
+            startupPhaseLines.joinToString("\n").ifBlank { getString(R.string.obs_startup_progress_idle) },
+        )
     }
+
+
+    private fun appendStartupPhase(phase: String) {
+        val timestamp = SimpleDateFormat("HH:mm:ss.SSS", Locale.US).format(Date())
+        startupPhaseLines += "[$timestamp] $phase"
+    }
+
+    private fun showBlockingEndpointError(message: String) {
+        AlertDialog.Builder(this)
+            .setTitle(R.string.obs_endpoint_malformed_title)
+            .setMessage(message)
+            .setPositiveButton(R.string.obs_ok_action, null)
+            .show()
+    }
+
 }

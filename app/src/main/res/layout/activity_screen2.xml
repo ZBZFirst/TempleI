@@ -127,7 +127,6 @@
                     </LinearLayout>
                 </LinearLayout>
 
-                <!-- Section B: OBS string generation + stream start/stop controls. -->
                 <LinearLayout
                     android:id="@+id/statePlanSection"
                     android:layout_width="match_parent"
@@ -201,6 +200,13 @@
                             android:layout_weight="1"
                             android:text="@string/obs_button_stop_stream" />
                     </LinearLayout>
+
+                    <Button
+                        android:id="@+id/copyDiagnosticsButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="72dp"
+                        android:layout_marginTop="12dp"
+                        android:text="@string/obs_button_copy_diagnostics" />
                 </LinearLayout>
 
                 <!-- OBS setup outputs required by workflow contract. -->
@@ -261,6 +267,27 @@
                         android:layout_height="wrap_content"
                         android:layout_marginTop="8dp"
                         android:text="@string/obs_interop_placeholder" />
+
+                    <TextView
+                        android:id="@+id/runtimeHealthText"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:text="@string/obs_runtime_health_placeholder" />
+
+                    <TextView
+                        android:id="@+id/lastEffectiveUrlText"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:text="@string/obs_last_effective_url_placeholder" />
+
+                    <TextView
+                        android:id="@+id/startupProgressText"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:text="@string/obs_startup_progress_placeholder" />
                 </LinearLayout>
 
             </LinearLayout>

@@ -90,6 +90,42 @@ class ExportFeatureInteropStageGateTest {
         assertTrue(gate.summary.contains("transport=ok"))
     }
 
+
+    @Test
+    fun `packet warning flags ingress active with no packet output`() {
+        val warning = ExportFeature.derivePacketWriteWarning(
+            muxVideoIngest = 15,
+            muxAudioIngest = 12,
+            packetCount = 0,
+            warnThreshold = 24,
+        )
+
+        assertEquals("ingress-active-without-packets", warning)
+    }
+
+    @Test
+    fun `packet warning reports warming up before threshold`() {
+        val warning = ExportFeature.derivePacketWriteWarning(
+            muxVideoIngest = 5,
+            muxAudioIngest = 3,
+            packetCount = 0,
+            warnThreshold = 24,
+        )
+
+        assertEquals("warming-up", warning)
+    }
+
+    @Test
+    fun `packet warning clears when packet output is non zero`() {
+        val warning = ExportFeature.derivePacketWriteWarning(
+            muxVideoIngest = 30,
+            muxAudioIngest = 30,
+            packetCount = 1,
+            warnThreshold = 24,
+        )
+
+        assertEquals("none", warning)
+    }
     private fun baseInputs(
         streamMode: CaptureCoordinator.StreamPathMode,
         cameraFramesEnqueued: Long = 0,

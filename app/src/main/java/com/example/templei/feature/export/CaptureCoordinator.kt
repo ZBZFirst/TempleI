@@ -18,6 +18,7 @@ object CaptureCoordinator {
     private const val LOG_EVERY_N_EVENTS = 120L
 
     enum class StreamPathMode {
+        ConnectionOnly,
         FullAv,
         VideoOnly,
         AudioOnly,
@@ -95,6 +96,10 @@ object CaptureCoordinator {
     )
 
     fun contractStatus(streamMode: StreamPathMode): ContractStatus {
+        if (streamMode == StreamPathMode.ConnectionOnly) {
+            return ContractStatus(ready = true, reason = "ready")
+        }
+
         if (!capturePathActive) {
             return ContractStatus(ready = false, reason = "capture session not active")
         }
@@ -116,6 +121,14 @@ object CaptureCoordinator {
         val streamMode: StreamPathMode = config.streamMode
         if (config.host.isBlank()) {
             return StartResult(isReady = false, error = "host missing")
+        }
+
+        if (streamMode == StreamPathMode.ConnectionOnly) {
+            capturePathActive = true
+            frameOutputListenerAttached = false
+            videoOutputListenerAttached = false
+            audioOutputListenerAttached = false
+            return StartResult(isReady = true)
         }
 
         val captureReady = CameraFeature.ensureCapturePipeline(context) {
