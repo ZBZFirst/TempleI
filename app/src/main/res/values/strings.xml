@@ -27,9 +27,10 @@
     <string name="obs_section_b_title">Section B · Stream Controls</string>
     <string name="obs_section_b_summary">Copy OBS Media Source Input URL, paste into OBS, then run Start/Stop controls (toggle stream path as needed).</string>
     <string name="obs_button_show_input">Show OBS Input URL</string>
-    <string name="obs_button_toggle_profile">Toggle Stream Path (A/V/Both)</string>
+    <string name="obs_button_toggle_profile">No Video or Audio, Connection Only (Default)</string>
     <string name="obs_button_start_stream">Start Stream</string>
     <string name="obs_button_stop_stream">Stop Stream</string>
+    <string name="obs_button_copy_diagnostics">Copy Diagnostics Snapshot</string>
 
     <string name="obs_setup_summary_title">OBS Setup Summary</string>
     <string name="obs_setup_summary_placeholder">Media Source instructions will appear here.</string>
@@ -38,6 +39,9 @@
     <string name="obs_connection_placeholder">Last Test: not run</string>
     <string name="obs_last_error_placeholder">Last Error: none</string>
     <string name="obs_interop_placeholder">Interop: not evaluated</string>
+    <string name="obs_runtime_health_placeholder">Runtime Health: mode=unknown conn=unknown packets=0 lastNativeError=none</string>
+    <string name="obs_last_effective_url_placeholder">Last Effective URL: n/a</string>
+    <string name="obs_startup_progress_placeholder">Startup Progress: idle</string>
 
     <string name="obs_setup_summary_value">Media Source\nLocal File = Off\nInput URL = %1$s\nInput Format = mpegts\nTransport = srt\nStream Path = %2$s</string>
     <string name="obs_session_state_value">Session State: %1$s</string>
@@ -45,6 +49,12 @@
     <string name="obs_connection_value">Last Test: %1$s</string>
     <string name="obs_last_error_value">Last Error: %1$s</string>
     <string name="obs_interop_value">Interop: %1$s</string>
+    <string name="obs_runtime_health_value">Runtime Health: mode=%1$s conn=%2$s packets=%3$d lastNativeError=%4$s</string>
+    <string name="obs_last_effective_url_value">Last Effective URL: %1$s
+Current Caller URL: %2$s</string>
+    <string name="obs_startup_progress_value">Startup Progress:
+%1$s</string>
+    <string name="obs_startup_progress_idle">idle</string>
     <string name="obs_no_error">none</string>
 
     <string name="obs_edit_host_title">Edit OBS Host/IP</string>
@@ -56,6 +66,13 @@
     <string name="obs_ok_action">OK</string>
     <string name="obs_input_dialog_title">OBS Media Source Input URL</string>
     <string name="obs_input_dialog_message">Use this URL in OBS Media Source:\n\n1) Start OBS as SRT listener\n2) Local File: Off\n3) Input URL: %1$s\n4) Input Format: mpegts\n5) Return here and press Start Stream</string>
+    <string name="obs_endpoint_malformed_title">Malformed endpoint detected</string>
+    <string name="obs_startup_phase_start_requested">Start requested from Screen 2</string>
+    <string name="obs_startup_phase_starting">Starting transport session</string>
+    <string name="obs_startup_phase_result">Start result: %1$s</string>
+    <string name="obs_startup_phase_stopped">Session stopped by operator</string>
+    <string name="obs_diagnostics_snapshot_copied">Diagnostics snapshot copied (run %1$s) and saved to %2$s</string>
+    <string name="obs_endpoint_malformed_generic">Endpoint configuration is malformed. Fix host/port and retry.</string>
     <string name="obs_service_unavailable">Stream service unavailable. Try again.</string>
     <string name="obs_service_channel_name">OBS Stream Session</string>
     <string name="obs_service_notification_title">TempleI stream session</string>

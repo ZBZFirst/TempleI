@@ -108,82 +108,6 @@
                         android:orientation="horizontal">
 
                         <Button
-                            android:id="@+id/defineMuxingButton"
-                            android:layout_width="0dp"
-                            android:layout_height="96dp"
-                            android:layout_weight="1"
-                            android:text="@string/obs_button_validate_test" />
-
-                        <Space
-                            android:layout_width="12dp"
-                            android:layout_height="wrap_content" />
-
-                        <Button
-                            android:id="@+id/defineRecoveryButton"
-                            android:layout_width="0dp"
-                            android:layout_height="96dp"
-                            android:layout_weight="1"
-                            android:text="@string/obs_button_preset_reset" />
-                    </LinearLayout>
-                </LinearLayout>
-
-                <!-- Section B: OBS string generation + stream start/stop controls. -->
-                <LinearLayout
-                    android:id="@+id/statePlanSection"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginBottom="24dp"
-                    android:background="@color/debug_warning"
-                    android:orientation="vertical"
-                    android:padding="16dp">
-
-                    <TextView
-                        android:id="@+id/statePlanTitle"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:text="@string/obs_section_b_title"
-                        android:textSize="20sp"
-                        android:textStyle="bold" />
-
-                    <TextView
-                        android:id="@+id/statePlanSummary"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="8dp"
-                        android:text="@string/obs_section_b_summary" />
-
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="16dp"
-                        android:orientation="horizontal">
-
-                        <Button
-                            android:id="@+id/setupStateMachineButton"
-                            android:layout_width="0dp"
-                            android:layout_height="96dp"
-                            android:layout_weight="1"
-                            android:text="@string/obs_button_show_input" />
-
-                        <Space
-                            android:layout_width="12dp"
-                            android:layout_height="wrap_content" />
-
-                        <Button
-                            android:id="@+id/setupFailureDomainsButton"
-                            android:layout_width="0dp"
-                            android:layout_height="96dp"
-                            android:layout_weight="1"
-                            android:text="@string/obs_button_toggle_profile" />
-                    </LinearLayout>
-
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="12dp"
-                        android:orientation="horizontal">
-
-                        <Button
                             android:id="@+id/setupContractsButton"
                             android:layout_width="0dp"
                             android:layout_height="96dp"
@@ -201,7 +125,13 @@
                             android:layout_weight="1"
                             android:text="@string/obs_button_stop_stream" />
                     </LinearLayout>
-                </LinearLayout>
+
+                    <Button
+                        android:id="@+id/copyDiagnosticsButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="72dp"
+                        android:layout_marginTop="12dp"
+                        android:text="@string/obs_button_copy_diagnostics" />
 
                 <!-- OBS setup outputs required by workflow contract. -->
                 <LinearLayout
@@ -261,6 +191,27 @@
                         android:layout_height="wrap_content"
                         android:layout_marginTop="8dp"
                         android:text="@string/obs_interop_placeholder" />
+
+                    <TextView
+                        android:id="@+id/runtimeHealthText"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:text="@string/obs_runtime_health_placeholder" />
+
+                    <TextView
+                        android:id="@+id/lastEffectiveUrlText"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:text="@string/obs_last_effective_url_placeholder" />
+
+                    <TextView
+                        android:id="@+id/startupProgressText"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:text="@string/obs_startup_progress_placeholder" />
                 </LinearLayout>
 
             </LinearLayout>
