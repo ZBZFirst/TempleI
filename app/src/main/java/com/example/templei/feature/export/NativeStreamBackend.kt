@@ -247,6 +247,11 @@ private object FfmpegStreamBackend : NativeStreamBackend {
 
     override fun start(endpoint: ObsEndpointSpec, streamMode: CaptureCoordinator.StreamPathMode): Result<Unit> {
         when (streamMode) {
+            CaptureCoordinator.StreamPathMode.ConnectionOnly -> {
+                videoEnabled = false
+                audioEnabled = false
+            }
+
             CaptureCoordinator.StreamPathMode.FullAv -> {
                 videoEnabled = true
                 audioEnabled = true
