@@ -1,62 +1,65 @@
-# TempleI Agent Onboarding Guide
+# TempleI Execution Plan (Reset)
 
-This file is the single source of truth for agent behavior in this repository.
+This file replaces prior onboarding/checklist docs and focuses only on the work needed to achieve a stable Android -> OBS live feed.
 
-## 1) Mission and product context
-- Primary product goal: stream live media from an Android device into **OBS Studio**.
-- Target transport: **SRT**.
-- OBS ingest path: **Media Source** using **Input** with `input_format=mpegts`.
+## Goal
+Deliver a reliable real-time video feed from Android into OBS using:
+- SRT transport
+- OBS Media Source Input URL
+- `input_format=mpegts`
 
-## 2) OBS input contract (non-negotiable)
-- We are **not** using local file playback in OBS Media Source.
-- The app must generate and display a copy/paste **input string (URL)** for operators.
-- Use SRT URL shape such as:
-  - `srt://<host>:<port>?mode=caller&timeout=<us>`
-- User-facing copy/text should call it an **input string/URL**, not a local file path.
+## Current Known State
+- Screen 2 operator workflow and wording are in place.
+- Screen 3/4 are archived from runtime flow.
+- Transport/native runtime still needs production-grade integration validation.
 
-## 3) Active scope and priorities
-- Current active feature surface: **Screen 2** (OBS ingest setup + stream controls + diagnostics).
-- **Screens 3 and 4 are out of scope** for current iterations and may be archived/deprioritized.
-- When tradeoffs are needed, prioritize reliability and operator clarity in Screen 2.
+## Immediate Next Steps (Required)
 
-## 4) Expected operator workflow
-1. Operator starts OBS as SRT listener.
-2. App user configures host/port in Screen 2.
-3. App displays copy/paste SRT input URL for OBS Media Source Input.
-4. Operator pastes the URL into OBS Media Source with `input_format=mpegts`.
-5. User starts stream from Screen 2 and verifies ingest health.
+### Step A — Fix and validate endpoint handshake path
+1. Add explicit URL validation before start:
+   - ensure URL query contains `mode=caller`
+   - ensure host/port are non-empty/valid
+2. Surface a hard-blocking UI error if malformed endpoint is detected.
+3. Add a visible "last effective URL" field in Screen 2 status to avoid copy/paste corruption.
 
-## 5) Engineering guardrails
-- Keep architecture aligned to the product context above.
-- Avoid introducing copy or UI labels that imply local-file ingest.
-- Any change touching streaming UX should preserve a clear “what to paste into OBS” path.
-- Prefer explicit diagnostics over generic errors in Screen 2.
+### Step B — Keep operator on Screen 2 during start
+1. Confirm start action does not trigger accidental navigation away from Screen 2.
+2. Lock start button while `Starting` and unlock only on `Streaming` or `Faulted`.
+3. Show a startup progress state with timestamped phase updates.
 
-## 6) Agent execution checklist (for every meaningful change)
-- Confirm change supports Screen 2 / OBS-SRT ingest path.
-- Verify strings and labels maintain "Input URL" framing.
-- Run targeted checks/tests relevant to changed files.
-- Summarize behavior impact and operator impact in PR description.
+### Step C — Verify native runtime is truly active (not stub)
+1. Gate "Streaming" success on runtime stats showing active non-stub behavior.
+2. If runtime indicates `runtimeMode=stub`, force `Faulted` with explicit remediation text.
+3. Add a concise runtime health panel in Screen 2:
+   - runtime mode
+   - connection state
+   - packets written
+   - last native error
 
-## 7) PR quality expectations
-- Keep PRs scoped and reviewable.
-- Include a short test/check list with exact commands run.
-- If behavior changes are visible in UI, include updated copy rationale.
-- Call out any deliberate deferrals with follow-up actions.
+### Step D — Enforce mux/write readiness before claiming healthy stream
+1. Require non-zero packet output (`packetsWritten > 0`) before "healthy" status.
+2. Keep interop stage-gate summaries visible and actionable.
+3. Add threshold-based warning if ingress is non-zero but packet output stays zero.
 
-## 8) Rationale
-For TempleI, SRT via OBS Media Source Input is the simplest supported operator workflow and should remain the default integration path unless explicitly re-scoped.
+### Step E — Add deterministic bring-up diagnostics for every run
+1. Standardize adb logcat filters for transport/mux/encoder startup evidence.
+2. Capture first 30 seconds of startup logs to file with run ID.
+3. Add a "copy diagnostics snapshot" action in Screen 2 for quick triage.
 
+### Step F — Add focused tests for start-path correctness
+1. Unit tests: endpoint validation and malformed URL rejection.
+2. Unit tests: state machine transitions (`Idle -> Starting -> Streaming/Faulted`).
+3. Integration test scaffold: start session with fake backend and assert packet-write gate behavior.
 
-## 9) Step-by-step implementation playbooks
-Use the following files for detailed "HOW" instructions and completion tracking:
-- `agent_steps/STEP-01-mission-and-context.md`
-- `agent_steps/STEP-02-obs-input-contract.md`
-- `agent_steps/STEP-03-active-scope-and-priorities.md`
-- `agent_steps/STEP-04-operator-workflow.md`
-- `agent_steps/STEP-05-engineering-guardrails.md`
-- `agent_steps/STEP-06-agent-execution-checklist.md`
-- `agent_steps/STEP-07-pr-quality-expectations.md`
-- `agent_steps/STEP-08-rationale-and-change-control.md`
+## Definition of Done
+The workflow is considered complete only when all are true:
+1. OBS connects using app-provided Input URL without manual edits.
+2. Android start action remains on Screen 2 with clear phase/status updates.
+3. Runtime reports non-stub active path.
+4. Packet output is non-zero and stable during session.
+5. OBS no longer reports repeated SRT I/O open failures for valid endpoint runs.
 
-Each step file contains a checkbox-based completion protocol and a "Codebase Reflection" section that defines how completion must be represented in the repository.
+## Guardrails
+- Do not re-introduce Screen 3/4 into active runtime flow until feed reliability is complete.
+- Do not label stream state as "healthy" unless packet write evidence is present.
+- Keep all user-facing instructions explicitly in Input URL terms (not local file semantics).
