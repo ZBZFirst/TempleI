@@ -353,6 +353,8 @@ object ExportFeature {
             encoderDropCount = pipelineSnapshot.encoderToMuxDropCount,
         )
         return when {
+            sessionState != SessionState.Streaming && config.streamMode == CaptureCoordinator.StreamPathMode.ConnectionOnly ->
+                "connection-only mode validates endpoint only; choose Video, Audio, or Both before Start Stream"
             sessionState != SessionState.Streaming -> "ffmpeg backend ready; start to begin stream session"
             else -> {
                 val diagnostics = refreshDiagnosticsSnapshotIfDue()

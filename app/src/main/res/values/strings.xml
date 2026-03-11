@@ -67,6 +67,7 @@ Current Caller URL: %2$s</string>
     <string name="obs_input_dialog_title">OBS Media Source Input URL</string>
     <string name="obs_input_dialog_message">Use this URL in OBS Media Source:\n\n1) Start OBS as SRT listener\n2) Local File: Off\n3) Input URL: %1$s\n4) Input Format: mpegts\n5) Return here and press Start Stream</string>
     <string name="obs_endpoint_malformed_title">Malformed endpoint detected</string>
+    <string name="obs_start_failure_title">Stream start failed</string>
     <string name="obs_startup_phase_start_requested">Start requested from Screen 2</string>
     <string name="obs_startup_phase_starting">Starting transport session</string>
     <string name="obs_startup_phase_result">Start result: %1$s</string>

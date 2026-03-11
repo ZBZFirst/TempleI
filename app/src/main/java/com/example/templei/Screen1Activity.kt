@@ -215,8 +215,13 @@ class Screen1Activity : ComponentActivity() {
             if (result.state == ExportFeature.SessionState.Streaming) {
                 ExportFeature.saveConfig(this, currentConfig)
             } else if (result.state == ExportFeature.SessionState.Faulted) {
-                appendStartupPhase(result.error ?: getString(R.string.obs_endpoint_malformed_generic))
-                showBlockingEndpointError(result.error ?: getString(R.string.obs_endpoint_malformed_generic))
+                val faultMessage = result.error ?: getString(R.string.obs_endpoint_malformed_generic)
+                appendStartupPhase(faultMessage)
+                if (faultMessage.startsWith("preflight failed:")) {
+                    showBlockingEndpointError(faultMessage)
+                } else {
+                    showStartFailureError(faultMessage)
+                }
             }
             renderStatus()
         }
@@ -427,6 +432,14 @@ class Screen1Activity : ComponentActivity() {
     private fun showBlockingEndpointError(message: String) {
         AlertDialog.Builder(this)
             .setTitle(R.string.obs_endpoint_malformed_title)
+            .setMessage(message)
+            .setPositiveButton(R.string.obs_ok_action, null)
+            .show()
+    }
+
+    private fun showStartFailureError(message: String) {
+        AlertDialog.Builder(this)
+            .setTitle(R.string.obs_start_failure_title)
             .setMessage(message)
             .setPositiveButton(R.string.obs_ok_action, null)
             .show()
