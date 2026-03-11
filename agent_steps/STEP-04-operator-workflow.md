@@ -19,8 +19,9 @@ Deliver a predictable operator sequence from OBS listener setup through successf
 - Step 04 is complete for current baseline.
 - Reflection evidence:
   - Section summaries and input dialog text now explicitly encode the expected OBS-first workflow and "press Start Stream" return step.
-  - Screen 2 start/stop controls remain bound to stream session start/stop actions.
-  - Interop and validation text remain visible in Screen 2 status outputs to guide operator recovery.
+  - Screen 1 now hosts active runtime start/stop and status controls with Screen 2 control surface embedded below preview for continuous operation.
+  - Screen 2 remains available as host-wrapper fallback while sharing the same stream-session behavior expectations.
+  - Interop and validation text remain visible in operator status outputs to guide recovery.
 
 ## Verification notes
 - Manual walkthrough on Screen 2 plus logs for start/stop transitions.
