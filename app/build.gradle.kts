@@ -146,11 +146,18 @@ val verifySrtDependency by tasks.registering {
 }
 
 val ffmpegOutputDirArm64 = layout.projectDirectory.dir("src/main/jniLibs/arm64-v8a")
+val ffmpegHeadersDir = layout.projectDirectory.dir("src/main/cpp/third_party/ffmpeg/include")
 val ffmpegRequiredLibs = listOf(
     "libavcodec.so",
     "libavformat.so",
     "libavutil.so",
     "libswresample.so",
+)
+val ffmpegRequiredHeaders = listOf(
+    "libavcodec/avcodec.h",
+    "libavformat/avformat.h",
+    "libavutil/avutil.h",
+    "libswresample/swresample.h",
 )
 
 val buildFfmpegArm64 by tasks.registering(Exec::class) {
@@ -171,7 +178,8 @@ val buildFfmpegArm64 by tasks.registering(Exec::class) {
     }
 
     onlyIf {
-        ffmpegRequiredLibs.any { !ffmpegOutputDirArm64.file(it).asFile.exists() }
+        ffmpegRequiredLibs.any { !ffmpegOutputDirArm64.file(it).asFile.exists() } ||
+                ffmpegRequiredHeaders.any { !ffmpegHeadersDir.file(it).asFile.exists() }
     }
 }
 
@@ -188,12 +196,15 @@ val verifyFfmpegDependency by tasks.registering {
     group = "verification"
     description = "Verify FFmpeg runtime libs are packaged for the enabled ABI"
     doLast {
-        val missing = ffmpegRequiredLibs.filterNot { ffmpegOutputDirArm64.file(it).asFile.exists() }
-        if (missing.isNotEmpty()) {
+        val missingLibs = ffmpegRequiredLibs.filterNot { ffmpegOutputDirArm64.file(it).asFile.exists() }
+        val missingHeaders = ffmpegRequiredHeaders.filterNot { ffmpegHeadersDir.file(it).asFile.exists() }
+        if (missingLibs.isNotEmpty() || missingHeaders.isNotEmpty()) {
             throw GradleException(
-                "Missing FFmpeg runtime dependencies for arm64-v8a: ${missing.joinToString()}. " +
+                "Missing FFmpeg native dependencies for arm64-v8a. " +
+                        "libs=[${missingLibs.joinToString()}], headers=[${missingHeaders.joinToString()}]. " +
                         "Run './gradlew :app:buildFfmpegArm64' (requires ANDROID_NDK_HOME + network) " +
-                        "or provide prebuilt FFmpeg runtime libraries under app/src/main/jniLibs/arm64-v8a/."
+                        "or provide prebuilt FFmpeg runtime libraries under app/src/main/jniLibs/arm64-v8a/ " +
+                        "and headers under app/src/main/cpp/third_party/ffmpeg/include/."
             )
         }
     }
