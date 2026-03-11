@@ -22,5 +22,40 @@ class ExportFeatureDiagnosticsSnapshotTest {
         assertTrue(snapshot.content.contains("consecutiveWriteFailures="))
         assertTrue(snapshot.content.contains("outputOpened="))
         assertTrue(snapshot.content.contains("headerWritten="))
+        assertTrue(snapshot.content.contains("trailerWritten="))
     }
+
+
+    @Test
+    fun `diagnostics snapshot surfaces trailerWritten value from backend diagnostics`() {
+        val backend = object : NativeStreamBackend {
+            override val id: NativeStreamBackend.BackendId = NativeStreamBackend.BackendId.Ffmpeg
+
+            override fun isAvailable(): Boolean = true
+
+            override fun availabilityMessage(): String = "test backend ready"
+
+            override fun start(endpoint: ObsEndpointSpec, streamMode: CaptureCoordinator.StreamPathMode): Result<Unit> = Result.success(Unit)
+
+            override fun pushVideoAccessUnit(accessUnit: VideoEncoderNode.EncodedAccessUnit): Result<Unit> = Result.success(Unit)
+
+            override fun pushAudioAccessUnit(accessUnit: AudioEncoderNode.EncodedAccessUnit): Result<Unit> = Result.success(Unit)
+
+            override fun stop(): Result<Unit> = Result.success(Unit)
+
+            override fun diagnosticsSummary(): String =
+                "runtimeMode=active connState=connected writePacketsSucceeded=4 outputOpened=true headerWritten=true trailerWritten=true"
+        }
+        NativeStreamBackends.installBackendForTesting(backend)
+        try {
+            val config = ExportFeature.ObsStreamConfig(host = "192.168.1.50", port = 9000)
+
+            val snapshot = ExportFeature.createDiagnosticsSnapshot(config = config, nowMs = 1700000000000)
+
+            assertTrue(snapshot.content.contains("trailerWritten=true"))
+        } finally {
+            NativeStreamBackends.installBackendForTesting(null)
+        }
+    }
+
 }
