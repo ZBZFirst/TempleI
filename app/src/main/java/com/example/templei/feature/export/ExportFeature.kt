@@ -25,7 +25,7 @@ object ExportFeature {
         val host: String = "",
         val port: Int = DEFAULT_PORT,
         val profile: String = PROFILE_BALANCED,
-        val streamMode: CaptureCoordinator.StreamPathMode = CaptureCoordinator.StreamPathMode.ConnectionOnly,
+        val streamMode: CaptureCoordinator.StreamPathMode = CaptureCoordinator.StreamPathMode.VideoOnly,
     )
 
     data class ValidationResult(
@@ -95,10 +95,12 @@ object ExportFeature {
             profile = prefs.getString(KEY_PROFILE, PROFILE_BALANCED).orEmpty(),
             streamMode = runCatching {
                 CaptureCoordinator.StreamPathMode.valueOf(
-                    prefs.getString(KEY_STREAM_MODE, CaptureCoordinator.StreamPathMode.ConnectionOnly.name)
-                        ?: CaptureCoordinator.StreamPathMode.ConnectionOnly.name,
+                    prefs.getString(KEY_STREAM_MODE, CaptureCoordinator.StreamPathMode.VideoOnly.name)
+                        ?: CaptureCoordinator.StreamPathMode.VideoOnly.name,
                 )
-            }.getOrDefault(CaptureCoordinator.StreamPathMode.ConnectionOnly),
+            }.getOrDefault(CaptureCoordinator.StreamPathMode.VideoOnly).let {
+                if (it == CaptureCoordinator.StreamPathMode.ConnectionOnly) CaptureCoordinator.StreamPathMode.VideoOnly else it
+            },
         )
     }
 
@@ -395,16 +397,17 @@ object ExportFeature {
 
     fun nextStreamMode(current: CaptureCoordinator.StreamPathMode): CaptureCoordinator.StreamPathMode {
         return when (current) {
-            CaptureCoordinator.StreamPathMode.ConnectionOnly -> CaptureCoordinator.StreamPathMode.VideoOnly
-            CaptureCoordinator.StreamPathMode.VideoOnly -> CaptureCoordinator.StreamPathMode.AudioOnly
+            CaptureCoordinator.StreamPathMode.ConnectionOnly,
+            CaptureCoordinator.StreamPathMode.VideoOnly,
+            -> CaptureCoordinator.StreamPathMode.AudioOnly
             CaptureCoordinator.StreamPathMode.AudioOnly -> CaptureCoordinator.StreamPathMode.FullAv
-            CaptureCoordinator.StreamPathMode.FullAv -> CaptureCoordinator.StreamPathMode.ConnectionOnly
+            CaptureCoordinator.StreamPathMode.FullAv -> CaptureCoordinator.StreamPathMode.VideoOnly
         }
     }
 
     fun streamModeLabel(mode: CaptureCoordinator.StreamPathMode): String {
         return when (mode) {
-            CaptureCoordinator.StreamPathMode.ConnectionOnly -> "No Video or Audio, Connection Only"
+            CaptureCoordinator.StreamPathMode.ConnectionOnly -> "Video Only"
             CaptureCoordinator.StreamPathMode.VideoOnly -> "Video Only"
             CaptureCoordinator.StreamPathMode.AudioOnly -> "Audio Only"
             CaptureCoordinator.StreamPathMode.FullAv -> "Video + Audio"

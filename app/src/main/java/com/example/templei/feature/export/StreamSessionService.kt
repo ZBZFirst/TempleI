@@ -1,10 +1,13 @@
 package com.example.templei.feature.export
 
+import android.Manifest
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.content.pm.ServiceInfo
 import android.os.Binder
 import android.os.Build
 import android.os.IBinder
@@ -46,7 +49,21 @@ class StreamSessionService : Service() {
                         return ExportFeature.markFault("capture contract failed: ${contractStatus.reason}")
                     }
 
-                    ensureForegroundNotification()
+                    val needsMicrophone = when (config.streamMode) {
+                        CaptureCoordinator.StreamPathMode.AudioOnly,
+                        CaptureCoordinator.StreamPathMode.FullAv,
+                        -> true
+
+                        CaptureCoordinator.StreamPathMode.ConnectionOnly,
+                        CaptureCoordinator.StreamPathMode.VideoOnly,
+                        -> false
+                    }
+                    if (needsMicrophone && !hasRecordAudioPermission()) {
+                        CaptureCoordinator.stopCapturePathSession()
+                        return ExportFeature.markFault("microphone permission required for selected stream mode")
+                    }
+
+                    ensureForegroundNotification(includeMicrophone = needsMicrophone)
                     val streamResult = ExportFeature.startStream(config)
                     if (streamResult.state != ExportFeature.SessionState.Streaming) {
                         // Keep capture/session teardown symmetric when transport start fails.
@@ -74,7 +91,7 @@ class StreamSessionService : Service() {
         fun lastError(): String = ExportFeature.lastError()
     }
 
-    private fun ensureForegroundNotification() {
+    private fun ensureForegroundNotification(includeMicrophone: Boolean) {
         if (isForegroundActive) {
             return
         }
@@ -87,8 +104,21 @@ class StreamSessionService : Service() {
             .setOngoing(true)
             .build()
 
-        startForeground(NOTIFICATION_ID, notification)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val serviceType = if (includeMicrophone) {
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+            } else {
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA
+            }
+            startForeground(NOTIFICATION_ID, notification, serviceType)
+        } else {
+            startForeground(NOTIFICATION_ID, notification)
+        }
         isForegroundActive = true
+    }
+
+    private fun hasRecordAudioPermission(): Boolean {
+        return checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
     }
 
     private fun stopForegroundSession() {
