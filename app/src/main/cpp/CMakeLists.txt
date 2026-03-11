@@ -22,7 +22,7 @@ if(EXISTS ${FFMPEG_HEADERS_DIR})
     target_include_directories(templei_ffmpeg PRIVATE ${FFMPEG_HEADERS_DIR})
 endif()
 
-set(FFMPEG_PREBUILT_DIR ${CMAKE_SOURCE_DIR}/src/main/jniLibs/${ANDROID_ABI})
+set(FFMPEG_PREBUILT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../jniLibs/${ANDROID_ABI})
 add_library(ffmpeg_avformat SHARED IMPORTED)
 set_target_properties(ffmpeg_avformat PROPERTIES IMPORTED_LOCATION ${FFMPEG_PREBUILT_DIR}/libavformat.so)
 add_library(ffmpeg_avcodec SHARED IMPORTED)
