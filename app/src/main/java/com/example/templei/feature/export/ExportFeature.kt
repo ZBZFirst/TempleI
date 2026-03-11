@@ -183,6 +183,10 @@ object ExportFeature {
     }
 
     fun startStream(config: ObsStreamConfig): StreamResult {
+        if (sessionState == SessionState.Streaming || sessionState == SessionState.Starting) {
+            return StreamResult(state = sessionState)
+        }
+
         val preflightMessage = preflightStartMessage(config)
         if (preflightMessage != null) {
             sessionState = SessionState.Faulted

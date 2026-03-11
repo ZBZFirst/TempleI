@@ -152,8 +152,15 @@ object CameraFeature {
 
 
     fun ensureCapturePipeline(context: Context, onUnavailable: () -> Unit = {}): Boolean {
-        val provider = cameraProvider ?: ProcessCameraProvider.getInstance(context).get().also {
-            cameraProvider = it
+        val provider = runCatching {
+            cameraProvider ?: ProcessCameraProvider.getInstance(context).get().also {
+                cameraProvider = it
+            }
+        }.getOrElse { error ->
+            Log.e(TAG, "capture pipeline init failed: ${error.message.orEmpty()}", error)
+            isBound = false
+            onUnavailable()
+            return false
         }
 
         if (!provider.hasCamera(selectedLensOption.toSelector())) {
