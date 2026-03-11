@@ -1,49 +1,36 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout
-    xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:gravity="center"
+    android:gravity="center_horizontal"
     android:orientation="vertical">
 
-    <!-- Shell layout for Screen 1.
-         Camera controls sit above the preview container while feature logic evolves. -->
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="24dp"
-        android:text="@string/screen1TitleText"
-        android:textSize="32sp" />
 
-    <androidx.constraintlayout.widget.ConstraintLayout
-        android:layout_width="match_parent"
-        android:layout_height="match_parent">
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:text="@string/screen1TitleText"
+            android:textSize="32sp" />
 
         <include
             android:id="@+id/topNavInclude"
             layout="@layout/view_top_navigation"
-            android:layout_width="0dp"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginStart="24dp"
             android:layout_marginTop="16dp"
-            android:layout_marginEnd="24dp"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toTopOf="parent" />
+            android:layout_marginEnd="24dp" />
 
         <LinearLayout
             android:id="@+id/cameraControlsRow"
-            android:layout_width="0dp"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginStart="24dp"
             android:layout_marginTop="16dp"
             android:layout_marginEnd="24dp"
             android:gravity="center"
-            android:orientation="horizontal"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@id/topNavInclude">
+            android:orientation="horizontal">
 
             <Button
                 android:id="@+id/selectCameraButton"
@@ -52,9 +39,7 @@
                 android:layout_weight="1"
                 android:text="@string/camera_select_button" />
 
-            <Space
-                android:layout_width="8dp"
-                android:layout_height="wrap_content" />
+            <Space android:layout_width="8dp" android:layout_height="wrap_content" />
 
             <Button
                 android:id="@+id/startCameraButton"
@@ -63,9 +48,7 @@
                 android:layout_weight="1"
                 android:text="@string/camera_start_button" />
 
-            <Space
-                android:layout_width="8dp"
-                android:layout_height="wrap_content" />
+            <Space android:layout_width="8dp" android:layout_height="wrap_content" />
 
             <Button
                 android:id="@+id/stopCameraButton"
@@ -75,19 +58,15 @@
                 android:text="@string/camera_stop_button" />
         </LinearLayout>
 
-        <!-- Secondary controls for media capture while preview is active. -->
         <LinearLayout
             android:id="@+id/captureControlsRow"
-            android:layout_width="0dp"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginStart="24dp"
             android:layout_marginTop="12dp"
             android:layout_marginEnd="24dp"
             android:gravity="center"
-            android:orientation="horizontal"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@id/cameraControlsRow">
+            android:orientation="horizontal">
 
             <Button
                 android:id="@+id/takePictureButton"
@@ -96,9 +75,7 @@
                 android:layout_weight="1"
                 android:text="@string/camera_picture_button" />
 
-            <Space
-                android:layout_width="8dp"
-                android:layout_height="wrap_content" />
+            <Space android:layout_width="8dp" android:layout_height="wrap_content" />
 
             <Button
                 android:id="@+id/recordVideoButton"
@@ -110,31 +87,28 @@
 
         <TextView
             android:id="@+id/cameraStatusText"
-            android:layout_width="0dp"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginStart="24dp"
             android:layout_marginTop="12dp"
             android:layout_marginEnd="24dp"
             android:gravity="center"
-            android:text="@string/camera_status_idle"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@id/captureControlsRow" />
+            android:text="@string/camera_status_idle" />
 
         <androidx.camera.view.PreviewView
             android:id="@+id/cameraPreviewView"
-            android:layout_width="0dp"
-            android:layout_height="0dp"
+            android:layout_width="match_parent"
+            android:layout_height="220dp"
             android:layout_marginStart="32dp"
             android:layout_marginTop="16dp"
             android:layout_marginEnd="32dp"
-            android:layout_marginBottom="32dp"
-            android:background="@color/debug_missing_file"
-            app:layout_constraintBottom_toBottomOf="parent"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@id/cameraStatusText" />
+            android:background="@color/debug_missing_file" />
 
-    </androidx.constraintlayout.widget.ConstraintLayout>
+        <include
+            layout="@layout/activity_screen2"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:layout_marginTop="16dp" />
 
 </LinearLayout>
