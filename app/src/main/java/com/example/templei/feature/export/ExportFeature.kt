@@ -266,6 +266,11 @@ object ExportFeature {
         val callerUrl = config.toTransportEndpointSpec().toSrtUrl()
         val backendDiagnostics = transportGateway.diagnosticsSummary()
         val runtime = parseRuntimeHealthSnapshot(backendDiagnostics)
+        val writePacketsFailed = parseLongField(backendDiagnostics, "writePacketsFailed")
+        val consecutiveWriteFailures = parseLongField(backendDiagnostics, "consecutiveWriteFailures")
+        val muxPacketsProduced = parseLongField(backendDiagnostics, "muxPacketsProduced")
+        val outputOpened = parseBooleanField(backendDiagnostics, "outputOpened")
+        val headerWritten = parseBooleanField(backendDiagnostics, "headerWritten")
         val stageDiagnostics = refreshDiagnosticsSnapshotIfDue(nowMs)
         val adbFilter = "TempleI-ExportFeature:V TsMuxerNode:V SrtTransportNode:V NativeStreamBackend:V VideoEncoderNode:V AudioEncoderNode:V *:S"
         val adbCaptureCommand = "adb logcat -v time $adbFilter | head -n 200 > startup-$runId.log"
@@ -279,6 +284,11 @@ object ExportFeature {
             appendLine("runtimeMode=${runtime.runtimeMode}")
             appendLine("connectionState=${runtime.connectionState}")
             appendLine("packetsWritten=${runtime.packetsWritten}")
+            appendLine("muxPacketsProduced=$muxPacketsProduced")
+            appendLine("writePacketsFailed=$writePacketsFailed")
+            appendLine("consecutiveWriteFailures=$consecutiveWriteFailures")
+            appendLine("outputOpened=$outputOpened")
+            appendLine("headerWritten=$headerWritten")
             appendLine("lastNativeError=${runtime.lastNativeError}")
             appendLine("adbFilter=$adbFilter")
             appendLine("adbCaptureCommand=$adbCaptureCommand")
@@ -415,8 +425,10 @@ object ExportFeature {
     private fun derivePacketWriteStatus(backendDiagnostics: String): String {
         val packets = parsePacketCount(backendDiagnostics)
         val consecutiveWriteFailures = Regex("""consecutiveWriteFailures=(\d+)""").find(backendDiagnostics)?.groupValues?.get(1)?.toLongOrNull() ?: 0L
+        val outputOpened = parseBooleanField(backendDiagnostics, "outputOpened")
+        val headerWritten = parseBooleanField(backendDiagnostics, "headerWritten")
         return when {
-            packets > 0L && consecutiveWriteFailures == 0L -> "active"
+            packets > 0L && consecutiveWriteFailures == 0L && outputOpened && headerWritten -> "active"
             packets == 0L && consecutiveWriteFailures > 0L -> "faulted"
             else -> "pending"
         }
@@ -472,9 +484,18 @@ object ExportFeature {
     }
 
     private fun parsePacketCount(backendDiagnostics: String): Long {
-        return Regex("""packetsWritten=(\d+)""").find(backendDiagnostics)?.groupValues?.get(1)?.toLongOrNull()
+        return Regex("""writePacketsSucceeded=(\d+)""").find(backendDiagnostics)?.groupValues?.get(1)?.toLongOrNull()
+            ?: Regex("""packetsWritten=(\d+)""").find(backendDiagnostics)?.groupValues?.get(1)?.toLongOrNull()
             ?: Regex("""packets=(\d+)""").find(backendDiagnostics)?.groupValues?.get(1)?.toLongOrNull()
             ?: 0L
+    }
+
+    private fun parseLongField(backendDiagnostics: String, field: String): Long {
+        return Regex("""$field=(\d+)""").find(backendDiagnostics)?.groupValues?.get(1)?.toLongOrNull() ?: 0L
+    }
+
+    private fun parseBooleanField(backendDiagnostics: String, field: String): Boolean {
+        return Regex("""$field=(true|false)""").find(backendDiagnostics)?.groupValues?.get(1)?.toBoolean() ?: false
     }
 
     private fun logStageGateTransitionIfNeeded(stageGate: InteropStageGate) {

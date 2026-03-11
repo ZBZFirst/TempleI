@@ -1,6 +1,7 @@
 package com.example.templei.feature.export
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -68,6 +69,75 @@ class ExportFeatureStartPathTest {
             assertTrue(status.contains("stream not healthy yet"))
             assertTrue(status.contains("packetWrite=pending"))
             assertTrue(status.contains("packets=0"))
+
+            ExportFeature.stopStream()
+        } finally {
+            NativeStreamBackends.installBackendForTesting(null)
+        }
+    }
+
+    @Test
+    fun `integration scaffold keeps stream unhealthy when lifecycle flags are missing despite packet count`() {
+        val backend = ScriptedBackend(
+            available = true,
+            startResult = Result.success(Unit),
+            diagnostics = "started=true connState=connected stats={packetsWritten=10 writePacketsSucceeded=10 outputOpened=false headerWritten=false consecutiveWriteFailures=0} runtime={runtimeMode=jni} lastErr={none}",
+        )
+        NativeStreamBackends.installBackendForTesting(backend)
+        try {
+            val config = ExportFeature.ObsStreamConfig(host = "192.168.1.50", port = 9000)
+            val start = ExportFeature.startStream(config)
+            assertEquals(ExportFeature.SessionState.Streaming, start.state)
+
+            val status = ExportFeature.interoperabilityStatus(config)
+            assertTrue(status.contains("stream not healthy yet"))
+            assertTrue(status.contains("packetWrite=pending"))
+
+            ExportFeature.stopStream()
+        } finally {
+            NativeStreamBackends.installBackendForTesting(null)
+        }
+    }
+
+    @Test
+    fun `integration scaffold reports healthy only when write counters and lifecycle are active`() {
+        val backend = ScriptedBackend(
+            available = true,
+            startResult = Result.success(Unit),
+            diagnostics = "started=true connState=connected stats={writePacketsSucceeded=12 packetsWritten=12 outputOpened=true headerWritten=true consecutiveWriteFailures=0} runtime={runtimeMode=jni} lastErr={none}",
+        )
+        NativeStreamBackends.installBackendForTesting(backend)
+        try {
+            val config = ExportFeature.ObsStreamConfig(host = "192.168.1.50", port = 9000)
+            val start = ExportFeature.startStream(config)
+            assertEquals(ExportFeature.SessionState.Streaming, start.state)
+
+            val status = ExportFeature.interoperabilityStatus(config)
+            assertTrue(status.contains("STREAM HEALTHY"))
+            assertTrue(status.contains("packetWrite=active"))
+
+            ExportFeature.stopStream()
+        } finally {
+            NativeStreamBackends.installBackendForTesting(null)
+        }
+    }
+
+    @Test
+    fun `integration scaffold marks packet write as faulted when consecutive failures are present`() {
+        val backend = ScriptedBackend(
+            available = true,
+            startResult = Result.success(Unit),
+            diagnostics = "started=true connState=connected stats={writePacketsSucceeded=5 packetsWritten=5 outputOpened=true headerWritten=true consecutiveWriteFailures=3} runtime={runtimeMode=jni} lastErr={native write failed}",
+        )
+        NativeStreamBackends.installBackendForTesting(backend)
+        try {
+            val config = ExportFeature.ObsStreamConfig(host = "192.168.1.50", port = 9000)
+            val start = ExportFeature.startStream(config)
+            assertEquals(ExportFeature.SessionState.Streaming, start.state)
+
+            val status = ExportFeature.interoperabilityStatus(config)
+            assertTrue(status.contains("packetWrite=faulted"))
+            assertFalse(status.contains("STREAM HEALTHY"))
 
             ExportFeature.stopStream()
         } finally {

@@ -192,11 +192,22 @@ class NativeStreamBackendsTest {
     fun `health hint flags native ingress without packet output`() {
         val hint = deriveFfmpegHealthHint(
             started = true,
-            statsSnapshot = "prepared=true started=true videoAu=24 audioAu=0 packets=0 bytes=0",
+            statsSnapshot = "prepared=true started=true videoAu=24 audioAu=0 writePacketsSucceeded=0 packets=99 bytes=0",
             runtimeInfo = "ffmpeg symbols resolved (PR C timestamp-guard scaffold)",
         )
 
         assertTrue(hint.orEmpty().contains("packet output is still idle"))
+    }
+
+    @Test
+    fun `health hint prefers canonical write packet field when available`() {
+        val hint = deriveFfmpegHealthHint(
+            started = true,
+            statsSnapshot = "prepared=true started=true videoAu=24 audioAu=12 writePacketsSucceeded=5 packets=0 bytes=0",
+            runtimeInfo = "ffmpeg runtime active",
+        )
+
+        assertEquals(null, hint)
     }
 
     @Test
