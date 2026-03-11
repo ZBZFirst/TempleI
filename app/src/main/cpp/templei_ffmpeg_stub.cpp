@@ -107,6 +107,33 @@ void refresh_runtime_info() {
     }
 }
 
+void log_output_protocol_diagnostics() {
+    const char* configuration = avformat_configuration();
+    __android_log_print(
+        ANDROID_LOG_INFO,
+        kTag,
+        "ffmpeg avformat_configuration=%s",
+        configuration == nullptr ? "(null)" : configuration
+    );
+
+    void* opaque = nullptr;
+    const char* protocol = nullptr;
+    bool srtFound = false;
+    while ((protocol = avio_enum_protocols(&opaque, 1)) != nullptr) {
+        __android_log_print(ANDROID_LOG_INFO, kTag, "ffmpeg output protocol=%s", protocol);
+        if (!srtFound && std::string(protocol) == "srt") {
+            srtFound = true;
+        }
+    }
+
+    __android_log_print(
+        ANDROID_LOG_INFO,
+        kTag,
+        "ffmpeg output protocol contains_srt=%d",
+        srtFound ? 1 : 0
+    );
+}
+
 void reset_mux_runtime_counters() {
     g_auAcceptedVideo.store(0);
     g_auAcceptedAudio.store(0);
@@ -498,6 +525,8 @@ Java_com_example_templei_feature_export_FfmpegNativeBridge_nativeStart(JNIEnv*, 
         set_error("nativeStart failed: output context not prepared");
         return JNI_FALSE;
     }
+
+    log_output_protocol_diagnostics();
 
     if ((g_outputFormatContext->oformat->flags & AVFMT_NOFILE) == 0) {
         const int openResult = avio_open2(&g_outputFormatContext->pb, g_output_url.c_str(), AVIO_FLAG_WRITE, nullptr, nullptr);
