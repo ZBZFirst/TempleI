@@ -78,6 +78,90 @@ long long now_ms() {
     );
 }
 
+struct AvRationalCompat {
+    int num;
+    int den;
+};
+
+struct AvPacketCompat {
+    void* buf;
+    int64_t pts;
+    int64_t dts;
+    uint8_t* data;
+    int size;
+    int stream_index;
+    int flags;
+    void* side_data;
+    int side_data_elems;
+    int64_t duration;
+    int64_t pos;
+    void* opaque;
+    void* opaque_ref;
+    AvRationalCompat time_base;
+};
+
+struct AvCodecParametersCompat {
+    int codec_type;
+    int codec_id;
+    uint32_t codec_tag;
+    uint8_t* extradata;
+    int extradata_size;
+    int format;
+    int64_t bit_rate;
+    int bits_per_coded_sample;
+    int bits_per_raw_sample;
+    int profile;
+    int level;
+    int width;
+    int height;
+    AvRationalCompat sample_aspect_ratio;
+    int field_order;
+    AvRationalCompat framerate;
+    int color_range;
+    int color_primaries;
+    int color_trc;
+    int color_space;
+    int chroma_location;
+    int video_delay;
+    uint64_t channel_layout;
+    int channels;
+    int sample_rate;
+    int block_align;
+    int frame_size;
+    int initial_padding;
+    int trailing_padding;
+    int seek_preroll;
+};
+
+struct AvStreamCompat {
+    int index;
+    int id;
+    void* codec;
+    void* priv_data;
+    AvRationalCompat time_base;
+    int64_t start_time;
+    int64_t duration;
+    int64_t nb_frames;
+    int disposition;
+    int discard;
+    AvRationalCompat sample_aspect_ratio;
+    void* metadata;
+    AvRationalCompat avg_frame_rate;
+    void* attached_pic;
+    void* side_data;
+    int nb_side_data;
+    int event_flags;
+    void* r_frame_rate;
+    void* recommended_encoder_configuration;
+    AvCodecParametersCompat* codecpar;
+};
+
+constexpr int kAvMediaTypeVideo = 0;
+constexpr int kAvMediaTypeAudio = 1;
+constexpr int kAvCodecIdH264 = 27;
+constexpr int kAvCodecIdAac = 86018;
+constexpr int kAvPktFlagKey = 0x0001;
+
 void set_error(const std::string& message) {
     g_last_error = message;
     __android_log_print(ANDROID_LOG_ERROR, kTag, "%s", message.c_str());
