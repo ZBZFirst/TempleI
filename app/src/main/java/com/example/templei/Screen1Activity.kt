@@ -192,30 +192,42 @@ class Screen1Activity : ComponentActivity() {
         }
         findViewById<Button>(R.id.setupContractsButton).setOnClickListener {
             if (currentConfig.host.isBlank()) {
-                promptForHost(); return@setOnClickListener
+                promptForHost()
+                return@setOnClickListener
             }
+
             startupPhaseLines.clear()
             appendStartupPhase(getString(R.string.obs_startup_phase_start_requested))
             isStartInFlight = true
+            appendStartupPhase(getString(R.string.obs_startup_phase_starting))
             renderStatus()
-            ExportFeature.saveConfig(this, currentConfig)
-            val startResult = ExportFeature.startStreaming(
-                context = this,
-                config = currentConfig,
-                onPhase = { appendStartupPhase(it); runOnUiThread { renderStatus() } },
-            )
+
+            val binder = streamSessionBinder
+            val result = if (binder != null) {
+                binder.startSession(currentConfig)
+            } else {
+                ExportFeature.markFault(getString(R.string.obs_service_unavailable))
+            }
+
             isStartInFlight = false
-            appendStartupPhase(startResult.message)
-            if (startResult.message.startsWith("preflight failed:")) showBlockingEndpointError(startResult.message)
+            appendStartupPhase(getString(R.string.obs_startup_phase_result, result.state.name.lowercase()))
+
+            if (result.state == ExportFeature.SessionState.Streaming) {
+                ExportFeature.saveConfig(this, currentConfig)
+            } else if (result.state == ExportFeature.SessionState.Faulted) {
+                appendStartupPhase(result.error ?: getString(R.string.obs_endpoint_malformed_generic))
+                showBlockingEndpointError(result.error ?: getString(R.string.obs_endpoint_malformed_generic))
+            }
             renderStatus()
         }
         findViewById<Button>(R.id.setupImplementationMapButton).setOnClickListener {
-            ExportFeature.stopStreaming(this)
-            appendStartupPhase(getString(R.string.obs_startup_phase_stop_requested))
+            streamSessionBinder?.stopSession() ?: ExportFeature.stopStream()
+            isStartInFlight = false
+            appendStartupPhase(getString(R.string.obs_startup_phase_stopped))
             renderStatus()
         }
         findViewById<Button>(R.id.copyDiagnosticsButton).setOnClickListener {
-            val snapshot = ExportFeature.buildDiagnosticsSnapshot(currentConfig)
+            val snapshot = ExportFeature.createDiagnosticsSnapshot(currentConfig)
             val diagnosticsDir = File(filesDir, "diagnostics").apply { mkdirs() }
             val outputFile = File(diagnosticsDir, "startup-${snapshot.runId}.log")
             outputFile.writeText(snapshot.content)
