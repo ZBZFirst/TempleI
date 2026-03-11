@@ -18,6 +18,7 @@ import com.example.templei.R
 class StreamSessionService : Service() {
     private val binder = LocalBinder()
     private var isForegroundActive = false
+    private val sessionLock = Any()
 
     override fun onBind(intent: Intent?): IBinder = binder
 
@@ -27,30 +28,38 @@ class StreamSessionService : Service() {
 
     inner class LocalBinder : Binder() {
         fun startSession(config: ExportFeature.ObsStreamConfig): ExportFeature.StreamResult {
-            val currentState = ExportFeature.currentState()
-            if (currentState == ExportFeature.SessionState.Streaming || currentState == ExportFeature.SessionState.Starting) {
-                return ExportFeature.StreamResult(state = currentState)
-            }
+            synchronized(sessionLock) {
+                val currentState = ExportFeature.currentState()
+                if (currentState == ExportFeature.SessionState.Streaming || currentState == ExportFeature.SessionState.Starting) {
+                    return ExportFeature.StreamResult(state = currentState)
+                }
 
-            val captureReady = CaptureCoordinator.startCapturePathSession(this@StreamSessionService, config)
-            if (!captureReady.isReady) {
-                return ExportFeature.markFault("capture path not ready: ${captureReady.error.orEmpty()}")
-            }
+                return runCatching {
+                    val captureReady = CaptureCoordinator.startCapturePathSession(this@StreamSessionService, config)
+                    if (!captureReady.isReady) {
+                        return ExportFeature.markFault("capture path not ready: ${captureReady.error.orEmpty()}")
+                    }
 
-            val contractStatus = CaptureCoordinator.contractStatus(config.streamMode)
-            if (!contractStatus.ready) {
-                CaptureCoordinator.stopCapturePathSession()
-                return ExportFeature.markFault("capture contract failed: ${contractStatus.reason}")
-            }
+                    val contractStatus = CaptureCoordinator.contractStatus(config.streamMode)
+                    if (!contractStatus.ready) {
+                        CaptureCoordinator.stopCapturePathSession()
+                        return ExportFeature.markFault("capture contract failed: ${contractStatus.reason}")
+                    }
 
-            ensureForegroundNotification()
-            val streamResult = ExportFeature.startStream(config)
-            if (streamResult.state != ExportFeature.SessionState.Streaming) {
-                // Keep capture/session teardown symmetric when transport start fails.
-                CaptureCoordinator.stopCapturePathSession()
-                stopForegroundSession()
+                    ensureForegroundNotification()
+                    val streamResult = ExportFeature.startStream(config)
+                    if (streamResult.state != ExportFeature.SessionState.Streaming) {
+                        // Keep capture/session teardown symmetric when transport start fails.
+                        CaptureCoordinator.stopCapturePathSession()
+                        stopForegroundSession()
+                    }
+                    streamResult
+                }.getOrElse { error ->
+                    CaptureCoordinator.stopCapturePathSession()
+                    stopForegroundSession()
+                    ExportFeature.markFault("start session crashed: ${error.message.orEmpty()}")
+                }
             }
-            return streamResult
         }
 
         fun stopSession(): ExportFeature.StreamResult {
