@@ -123,6 +123,29 @@ class ExportFeatureStartPathTest {
     }
 
     @Test
+    fun `integration scaffold does not require trailerWritten for active stream health`() {
+        val backend = ScriptedBackend(
+            available = true,
+            startResult = Result.success(Unit),
+            diagnostics = "started=true connState=connected stats={writePacketsSucceeded=12 packetsWritten=12 outputOpened=true headerWritten=true trailerWritten=false consecutiveWriteFailures=0} runtime={runtimeMode=jni} lastErr={none}",
+        )
+        NativeStreamBackends.installBackendForTesting(backend)
+        try {
+            val config = ExportFeature.ObsStreamConfig(host = "192.168.1.50", port = 9000)
+            val start = ExportFeature.startStream(config)
+            assertEquals(ExportFeature.SessionState.Streaming, start.state)
+
+            val status = ExportFeature.interoperabilityStatus(config)
+            assertTrue(status.contains("STREAM HEALTHY"))
+            assertTrue(status.contains("packetWrite=active"))
+
+            ExportFeature.stopStream()
+        } finally {
+            NativeStreamBackends.installBackendForTesting(null)
+        }
+    }
+
+    @Test
     fun `integration scaffold marks packet write as faulted when consecutive failures are present`() {
         val backend = ScriptedBackend(
             available = true,

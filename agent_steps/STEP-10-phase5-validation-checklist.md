@@ -29,6 +29,7 @@ Generate a diagnostics snapshot during startup and verify presence of:
 - [ ] `consecutiveWriteFailures`
 - [ ] `outputOpened`
 - [ ] `headerWritten`
+- [ ] `trailerWritten`
 - [ ] `lastNativeError`
 - [ ] `obsInputUrl`
 - [ ] `transportCallerUrl`

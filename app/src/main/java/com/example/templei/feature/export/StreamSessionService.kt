@@ -11,6 +11,7 @@ import android.content.pm.ServiceInfo
 import android.os.Binder
 import android.os.Build
 import android.os.IBinder
+import android.util.Log
 import com.example.templei.R
 
 /**
@@ -19,6 +20,7 @@ import com.example.templei.R
  * TODO: Keep this boundary stable while native MPEG-TS + SRT internals are integrated.
  */
 class StreamSessionService : Service() {
+    private val tag = "TempleI-StreamSessionService"
     private val binder = LocalBinder()
     private var isForegroundActive = false
     private val sessionLock = Any()
@@ -74,7 +76,12 @@ class StreamSessionService : Service() {
                 }.getOrElse { error ->
                     CaptureCoordinator.stopCapturePathSession()
                     stopForegroundSession()
-                    ExportFeature.markFault("start session crashed: ${error.message.orEmpty()}")
+                    ExportFeature.markFault(
+                        startSessionFailureMessage(
+                            error = error,
+                            needsMicrophone = selectedStreamNeedsMicrophone(config.streamMode),
+                        ),
+                    )
                 }
             }
         }
@@ -96,6 +103,10 @@ class StreamSessionService : Service() {
             return
         }
 
+        if (includeMicrophone && !hasRecordAudioPermission()) {
+            throw SecurityException("microphone permission required for selected stream mode")
+        }
+
         createNotificationChannel()
         val notification = Notification.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.mipmap.ic_launcher)
@@ -115,6 +126,34 @@ class StreamSessionService : Service() {
             startForeground(NOTIFICATION_ID, notification)
         }
         isForegroundActive = true
+    }
+
+    private fun startSessionFailureMessage(error: Throwable, needsMicrophone: Boolean): String {
+        val message = error.message.orEmpty()
+        val isMicrophoneForegroundFailure = needsMicrophone && (
+            message.contains("FOREGROUND_SERVICE_MICROPHONE", ignoreCase = true) ||
+                message.contains("type microphone", ignoreCase = true) ||
+                message.contains("RECORD_AUDIO", ignoreCase = true)
+            )
+
+        if (isMicrophoneForegroundFailure) {
+            return "microphone foreground permission/start policy blocked this stream start; grant microphone permission and retry, or switch to Video Only mode"
+        }
+
+        Log.e(tag, "start session crashed", error)
+        return "start session crashed: ${message.ifBlank { error::class.java.simpleName }}"
+    }
+
+    private fun selectedStreamNeedsMicrophone(streamMode: CaptureCoordinator.StreamPathMode): Boolean {
+        return when (streamMode) {
+            CaptureCoordinator.StreamPathMode.AudioOnly,
+            CaptureCoordinator.StreamPathMode.FullAv,
+            -> true
+
+            CaptureCoordinator.StreamPathMode.ConnectionOnly,
+            CaptureCoordinator.StreamPathMode.VideoOnly,
+            -> false
+        }
     }
 
     private fun hasRecordAudioPermission(): Boolean {
