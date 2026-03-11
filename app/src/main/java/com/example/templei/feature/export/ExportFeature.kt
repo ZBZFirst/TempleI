@@ -277,6 +277,7 @@ object ExportFeature {
         val muxPacketsProduced = parseLongField(backendDiagnostics, "muxPacketsProduced")
         val outputOpened = parseBooleanField(backendDiagnostics, "outputOpened")
         val headerWritten = parseBooleanField(backendDiagnostics, "headerWritten")
+        val trailerWritten = parseBooleanField(backendDiagnostics, "trailerWritten")
         val stageDiagnostics = refreshDiagnosticsSnapshotIfDue(nowMs)
         val adbFilter = "TempleI-ExportFeature:V TsMuxerNode:V SrtTransportNode:V NativeStreamBackend:V VideoEncoderNode:V AudioEncoderNode:V *:S"
         val adbCaptureCommand = "adb logcat -v time $adbFilter | head -n 200 > startup-$runId.log"
@@ -295,6 +296,7 @@ object ExportFeature {
             appendLine("consecutiveWriteFailures=$consecutiveWriteFailures")
             appendLine("outputOpened=$outputOpened")
             appendLine("headerWritten=$headerWritten")
+            appendLine("trailerWritten=$trailerWritten")
             appendLine("lastNativeError=${runtime.lastNativeError}")
             appendLine("adbFilter=$adbFilter")
             appendLine("adbCaptureCommand=$adbCaptureCommand")

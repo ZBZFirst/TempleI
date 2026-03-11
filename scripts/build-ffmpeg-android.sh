@@ -27,6 +27,7 @@ FFMPEG_SRC_DIR="$DEPS_DIR/ffmpeg"
 FFMPEG_BUILD_DIR="$DEPS_DIR/build-ffmpeg-$ABI"
 SRT_BUILD_DIR="$DEPS_DIR/build-srt-$ABI"
 JNI_OUT_DIR="$APP_DIR/src/main/jniLibs/$ABI"
+FFMPEG_HEADERS_OUT_DIR="$APP_DIR/src/main/cpp/third_party/ffmpeg/include"
 
 case "$ABI" in
   arm64-v8a)
@@ -46,7 +47,7 @@ if [[ -z "${ANDROID_NDK_HOME:-}" ]]; then
   exit 1
 fi
 
-for tool in git cmake make pkg-config; do
+for tool in git make pkg-config; do
   if ! command -v "$tool" >/dev/null 2>&1; then
     echo "Missing required build tool: $tool"
     echo "Install '$tool' and re-run ./gradlew :app:buildFfmpegArm64"
@@ -211,5 +212,13 @@ cp "$FFMPEG_BUILD_DIR/install/lib/libavcodec.so"     "$JNI_OUT_DIR/libavcodec.so
 cp "$FFMPEG_BUILD_DIR/install/lib/libavformat.so"    "$JNI_OUT_DIR/libavformat.so"
 cp "$FFMPEG_BUILD_DIR/install/lib/libavutil.so"      "$JNI_OUT_DIR/libavutil.so"
 cp "$FFMPEG_BUILD_DIR/install/lib/libswresample.so"  "$JNI_OUT_DIR/libswresample.so"
+
+mkdir -p "$FFMPEG_HEADERS_OUT_DIR"
+cp -R "$FFMPEG_BUILD_DIR/install/include/libavcodec" "$FFMPEG_HEADERS_OUT_DIR/"
+cp -R "$FFMPEG_BUILD_DIR/install/include/libavformat" "$FFMPEG_HEADERS_OUT_DIR/"
+cp -R "$FFMPEG_BUILD_DIR/install/include/libavutil" "$FFMPEG_HEADERS_OUT_DIR/"
+cp -R "$FFMPEG_BUILD_DIR/install/include/libswresample" "$FFMPEG_HEADERS_OUT_DIR/"
+
+echo "Installed FFmpeg headers into $FFMPEG_HEADERS_OUT_DIR"
 
 echo "Built and installed FFmpeg runtime libs into $JNI_OUT_DIR"
