@@ -10,7 +10,7 @@ Deliver a reliable real-time video feed from Android into OBS using:
 
 ## Codebase Reality Snapshot
 - Active operator flow is **Screen 1 first** (camera + OBS controls in one place).
-- Screen 2 is retained as a fallback/wrapper host for continuity and verification.
+- Screen 2 remains available and fully wired for the same OBS setup/start/stop/diagnostics workflow as Screen 1; it now acts as a fallback host rather than the primary path.
 - Stream mode defaults to **Video Only**; stored legacy `ConnectionOnly` values are coerced to `VideoOnly` on load.
 - Startup failure UX separates **endpoint preflight failures** from **runtime start failures**.
 - Runtime health and diagnostics are surfaced via:
@@ -19,6 +19,23 @@ Deliver a reliable real-time video feed from Android into OBS using:
   - startup phase timeline,
   - deterministic diagnostics snapshots (`runId` + adb filter command metadata).
 - Health must not be marked "healthy" without packet evidence.
+
+## App Behavior vs Placeholder/Archive Surfaces (source-reviewed)
+This section is the truth source for what currently runs vs what is intentionally non-runtime:
+
+### What the app **does today**
+- Main launcher routes operators to Screen 1 or Screen 2 only.
+- Top navigation is wired only to Screen 1/2 destinations.
+- Screen 1 and Screen 2 both provide active OBS endpoint setup, preflight validation, stream start/stop controls, runtime health visibility, and diagnostics snapshot copy/export actions.
+- Stream session orchestration runs via `StreamSessionService` (foreground service), not via Screen 3/4.
+
+### What remains **placeholder/archive**
+- Screen 3 and Screen 4 are shell activities with TODO comments and no active runtime integration.
+- Screen 3/4 are intentionally excluded from active top-nav and not registered as active app activities in the manifest.
+- `data_extraction_rules.xml` is still Android template scaffolding with TODO placeholders and should not be treated as finalized backup policy.
+
+### Handoff expectation
+- When placeholder/archive surfaces are promoted to runtime, update this file in the same PR so this section remains aligned with code reality.
 
 ## Stabilization Steps A-F Status
 All previously planned stabilization steps remain complete in code/tests:
@@ -41,7 +58,7 @@ All previously planned stabilization steps remain complete in code/tests:
    - migrate callback-driven camera UI updates toward state-flow/ViewModel ownership.
    - evaluate whether recording/stream capture should run in a stronger foreground-service session for background resilience.
 4. **Archived screens:**
-   - Screen 3/4 remain placeholder/archive surfaces; either keep clearly marked as non-runtime or de-scope from nav in a future cleanup PR.
+   - Screen 3/4 remain placeholder/archive surfaces; either keep clearly marked as non-runtime or de-scope stale assets/classes in a future cleanup PR.
 5. **Android backup config hygiene:**
    - resolve template TODO in `data_extraction_rules.xml` so backup/restore behavior is explicitly intentional.
 
