@@ -41,10 +41,12 @@ android {
             )
         }
     }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
     }
+
     buildFeatures {
         compose = true
     }
@@ -86,64 +88,31 @@ dependencies {
     implementation(libs.androidx.camera.lifecycle)
     implementation(libs.androidx.camera.view)
     implementation(libs.androidx.camera.video)
+
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
+
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
 }
 
+/*
+ * Native dependency toolchain contract:
+ * - Custom native build tasks must use the same NDK version as the Android module.
+ * - On Windows hosts, custom shell builds are executed through MSYS2 bash with MINGW64 tools in PATH.
+ * - Task inputs are explicit and deterministic; no reliance on stale ANDROID_NDK_HOME process state.
+ */
+val androidSdkRoot = File(System.getProperty("user.home"), "AppData/Local/Android/Sdk")
+val androidNdkVersion = "28.2.13676358"
+val androidNdkRoot = File(androidSdkRoot, "ndk/$androidNdkVersion")
+
+val msys2UsrBin = "C:\\msys64\\usr\\bin"
+val msys2Mingw64Bin = "C:\\msys64\\mingw64\\bin"
 
 val srtOutputArm64 = layout.projectDirectory.file("src/main/jniLibs/arm64-v8a/libsrt.so")
-
-val buildSrtArm64 by tasks.registering(Exec::class) {
-    group = "native dependencies"
-    description = "Build libsrt.so for arm64-v8a and copy it into app/src/main/jniLibs/arm64-v8a"
-    workingDir = rootDir
-
-    doFirst {
-        val ndkHome = providers.environmentVariable("ANDROID_NDK_HOME").orNull
-            ?: throw GradleException("ANDROID_NDK_HOME is not set for Gradle.")
-        logger.lifecycle("buildSrtArm64 using ANDROID_NDK_HOME=$ndkHome")
-        commandLine(
-            "C:/Program Files/Git/bin/bash.exe",
-            "scripts/build-libsrt-android.sh",
-            "arm64-v8a",
-            ndkHome,
-        )
-    }
-
-    onlyIf {
-        !srtOutputArm64.asFile.exists()
-    }
-}
-
-val installSrtArm64 by tasks.registering {
-    group = "native dependencies"
-    description = "Install sender-side libsrt.so for arm64-v8a when missing"
-    dependsOn(buildSrtArm64)
-    doLast {
-        if (srtOutputArm64.asFile.exists()) {
-            logger.lifecycle("libsrt.so ready at ${srtOutputArm64.asFile}")
-        }
-    }
-}
-
-val verifySrtDependency by tasks.registering {
-    group = "verification"
-    description = "Verify sender-side libsrt.so is packaged for the enabled ABI"
-    doLast {
-        if (!srtOutputArm64.asFile.exists()) {
-            throw GradleException(
-                "Missing SRT sender dependency: ${srtOutputArm64.asFile}. " +
-                        "Run './gradlew :app:buildSrtArm64' (requires ANDROID_NDK_HOME + network) " +
-                        "or provide a prebuilt libsrt.so for arm64-v8a."
-            )
-        }
-    }
-}
 
 val ffmpegOutputDirArm64 = layout.projectDirectory.dir("src/main/jniLibs/arm64-v8a")
 val ffmpegHeadersDir = layout.projectDirectory.dir("src/main/cpp/third_party/ffmpeg/include")
@@ -160,20 +129,88 @@ val ffmpegRequiredHeaders = listOf(
     "libswresample/swresample.h",
 )
 
+fun requireConfiguredNdk() {
+    if (!androidNdkRoot.exists()) {
+        throw GradleException(
+            "Configured Android NDK not found at ${androidNdkRoot.absolutePath}. " +
+                    "Install NDK $androidNdkVersion from Android Studio SDK Manager."
+        )
+    }
+}
+
+fun nativeBuildPath(): String {
+    val existingPath = System.getenv("PATH").orEmpty()
+    return "$msys2Mingw64Bin;$msys2UsrBin;$existingPath"
+}
+
+val buildSrtArm64 by tasks.registering(Exec::class) {
+    group = "native dependencies"
+    description = "Build libsrt.so for arm64-v8a and copy it into app/src/main/jniLibs/arm64-v8a"
+    workingDir = rootDir
+
+    doFirst {
+        requireConfiguredNdk()
+        logger.lifecycle("buildSrtArm64 using NDK=${androidNdkRoot.absolutePath}")
+
+        environment("PATH", nativeBuildPath())
+        environment("MSYSTEM", "MINGW64")
+
+        commandLine(
+            "$msys2UsrBin\\bash.exe",
+            "scripts/build-libsrt-android.sh",
+            "arm64-v8a",
+            androidNdkRoot.absolutePath.replace("\\", "/"),
+        )
+    }
+
+    onlyIf {
+        !srtOutputArm64.asFile.exists()
+    }
+}
+
+val installSrtArm64 by tasks.registering {
+    group = "native dependencies"
+    description = "Install sender-side libsrt.so for arm64-v8a when missing"
+    dependsOn(buildSrtArm64)
+
+    doLast {
+        if (srtOutputArm64.asFile.exists()) {
+            logger.lifecycle("libsrt.so ready at ${srtOutputArm64.asFile}")
+        }
+    }
+}
+
+val verifySrtDependency by tasks.registering {
+    group = "verification"
+    description = "Verify sender-side libsrt.so is packaged for the enabled ABI"
+
+    doLast {
+        if (!srtOutputArm64.asFile.exists()) {
+            throw GradleException(
+                "Missing SRT sender dependency: ${srtOutputArm64.asFile}. " +
+                        "Run 'gradlew :app:buildSrtArm64' or provide a prebuilt libsrt.so for arm64-v8a."
+            )
+        }
+    }
+}
+
 val buildFfmpegArm64 by tasks.registering(Exec::class) {
     group = "native dependencies"
     description = "Build FFmpeg runtime libs for arm64-v8a and copy them into app/src/main/jniLibs/arm64-v8a"
     workingDir = rootDir
 
     doFirst {
-        val ndkHome = providers.environmentVariable("ANDROID_NDK_HOME").orNull
-            ?: throw GradleException("ANDROID_NDK_HOME is not set for Gradle.")
-        logger.lifecycle("buildFfmpegArm64 using ANDROID_NDK_HOME=$ndkHome")
+        requireConfiguredNdk()
+        logger.lifecycle("buildFfmpegArm64 using NDK=${androidNdkRoot.absolutePath}")
+
+        environment("PATH", nativeBuildPath())
+        environment("MSYSTEM", "MINGW64")
+
         commandLine(
-            "C:/Program Files/Git/bin/bash.exe",
+            "$msys2UsrBin\\bash.exe",
             "scripts/build-ffmpeg-android.sh",
             "arm64-v8a",
-            ndkHome,
+            androidNdkRoot.absolutePath.replace("\\", "/"),
         )
     }
 
@@ -187,6 +224,7 @@ val installFfmpegArm64 by tasks.registering {
     group = "native dependencies"
     description = "Install FFmpeg runtime libs for arm64-v8a when missing"
     dependsOn(buildFfmpegArm64)
+
     doLast {
         logger.lifecycle("FFmpeg arm64 runtime check completed in ${ffmpegOutputDirArm64.asFile}")
     }
@@ -195,16 +233,18 @@ val installFfmpegArm64 by tasks.registering {
 val verifyFfmpegDependency by tasks.registering {
     group = "verification"
     description = "Verify FFmpeg runtime libs are packaged for the enabled ABI"
+
     doLast {
         val missingLibs = ffmpegRequiredLibs.filterNot { ffmpegOutputDirArm64.file(it).asFile.exists() }
         val missingHeaders = ffmpegRequiredHeaders.filterNot { ffmpegHeadersDir.file(it).asFile.exists() }
+
         if (missingLibs.isNotEmpty() || missingHeaders.isNotEmpty()) {
             throw GradleException(
                 "Missing FFmpeg native dependencies for arm64-v8a. " +
                         "libs=[${missingLibs.joinToString()}], headers=[${missingHeaders.joinToString()}]. " +
-                        "Run './gradlew :app:buildFfmpegArm64' (requires ANDROID_NDK_HOME + network) " +
-                        "or provide prebuilt FFmpeg runtime libraries under app/src/main/jniLibs/arm64-v8a/ " +
-                        "and headers under app/src/main/cpp/third_party/ffmpeg/include/."
+                        "Run 'gradlew :app:buildFfmpegArm64' or provide prebuilt FFmpeg runtime libraries under " +
+                        "app/src/main/jniLibs/arm64-v8a and headers under " +
+                        "app/src/main/cpp/third_party/ffmpeg/include."
             )
         }
     }
