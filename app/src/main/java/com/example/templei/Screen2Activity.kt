@@ -66,7 +66,7 @@ class Screen2Activity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        setContentView(R.layout.activity_screen2)
+        setContentView(R.layout.activity_screen2_host)
         TopNavigation.bind(activity = this, currentDestination = Screen2Activity::class.java)
 
         bindViews()

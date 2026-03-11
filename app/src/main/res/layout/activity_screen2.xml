@@ -1,49 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
-    android:layout_height="match_parent"
+    android:layout_height="wrap_content"
     android:orientation="vertical">
 
-    <!-- Screen 2 is the OBS SRT ingest configuration and control surface. -->
-    <TextView
-        android:id="@+id/screenTitle"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="24dp"
-        android:gravity="center"
-        android:text="@string/screen2_title_text"
-        android:textSize="32sp" />
-
-    <androidx.constraintlayout.widget.ConstraintLayout
-        android:layout_width="match_parent"
-        android:layout_height="match_parent">
-
-        <include
-            android:id="@+id/topNavInclude"
-            layout="@layout/view_top_navigation"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="24dp"
-            android:layout_marginTop="16dp"
-            android:layout_marginEnd="24dp"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toTopOf="parent" />
-
-        <ScrollView
+    <!-- Embeddable OBS SRT ingest configuration and control surface. -->
+<ScrollView
             android:id="@+id/buttonScrollArea"
-            android:layout_width="0dp"
-            android:layout_height="0dp"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
             android:layout_marginStart="24dp"
             android:layout_marginTop="24dp"
             android:layout_marginEnd="24dp"
-            android:layout_marginBottom="24dp"
-            app:layout_constraintBottom_toBottomOf="parent"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@id/topNavInclude">
+            android:layout_marginBottom="24dp">
 
             <LinearLayout
                 android:id="@+id/sectionStack"
@@ -292,7 +262,5 @@
 
             </LinearLayout>
         </ScrollView>
-
-    </androidx.constraintlayout.widget.ConstraintLayout>
 
 </LinearLayout>
