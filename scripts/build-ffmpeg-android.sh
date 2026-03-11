@@ -47,7 +47,7 @@ if [[ -z "${ANDROID_NDK_HOME:-}" ]]; then
   exit 1
 fi
 
-for tool in git cmake make pkg-config; do
+for tool in git make pkg-config; do
   if ! command -v "$tool" >/dev/null 2>&1; then
     echo "Missing required build tool: $tool"
     echo "Install '$tool' and re-run ./gradlew :app:buildFfmpegArm64"
