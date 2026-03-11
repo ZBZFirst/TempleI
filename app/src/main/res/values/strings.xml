@@ -27,7 +27,7 @@
     <string name="obs_section_b_title">Section B · Stream Controls</string>
     <string name="obs_section_b_summary">Copy OBS Media Source Input URL, paste into OBS, then run Start/Stop controls (toggle stream path as needed).</string>
     <string name="obs_button_show_input">Show OBS Input URL</string>
-    <string name="obs_button_toggle_profile">No Video or Audio, Connection Only (Default)</string>
+    <string name="obs_button_toggle_profile">Video Only (Default)</string>
     <string name="obs_button_start_stream">Start Stream</string>
     <string name="obs_button_stop_stream">Stop Stream</string>
     <string name="obs_button_copy_diagnostics">Copy Diagnostics Snapshot</string>
@@ -67,6 +67,7 @@ Current Caller URL: %2$s</string>
     <string name="obs_input_dialog_title">OBS Media Source Input URL</string>
     <string name="obs_input_dialog_message">Use this URL in OBS Media Source:\n\n1) Start OBS as SRT listener\n2) Local File: Off\n3) Input URL: %1$s\n4) Input Format: mpegts\n5) Return here and press Start Stream</string>
     <string name="obs_endpoint_malformed_title">Malformed endpoint detected</string>
+    <string name="obs_start_failure_title">Stream start failed</string>
     <string name="obs_startup_phase_start_requested">Start requested from Screen 2</string>
     <string name="obs_startup_phase_starting">Starting transport session</string>
     <string name="obs_startup_phase_result">Start result: %1$s</string>

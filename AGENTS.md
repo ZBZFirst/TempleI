@@ -24,3 +24,15 @@ All planned steps A-F were implemented in code and tests:
 
 ## Follow-up Guidance
 Future edits should prefer this stable baseline and only add changes that improve native runtime reliability, packet stability, and operator diagnostics.
+
+## End-of-night handoff (2026-03-11)
+- Screen 1 now hosts the active camera + OBS workflow in one place, with Screen 2 controls embedded beneath the preview surface for operator continuity.
+- Screen 2 remains available as a host/wrapper activity for fallback navigation and verification, but active runtime flow is Screen 1-first.
+- Stream mode defaults to **Video Only**; legacy Connection Only persisted values are coerced to Video Only on config load.
+- Startup error handling now distinguishes endpoint preflight issues vs runtime start failures (separate dialog intent/titles), reducing operator confusion during retries.
+- Foreground service startup now gates microphone service type by selected mode and checks `RECORD_AUDIO` permission for audio-inclusive modes before starting session.
+
+### Next-session priorities
+1. Validate on-device end-to-end ingest with OBS listener using Video Only default and then Audio Only / Full AV toggles.
+2. Confirm first packet write evidence (`outputOpened=true`, `headerWritten=true`, packet counters > 0) before calling stream healthy.
+3. Capture one clean diagnostics snapshot from successful stream and one from faulted stream for side-by-side comparison.
