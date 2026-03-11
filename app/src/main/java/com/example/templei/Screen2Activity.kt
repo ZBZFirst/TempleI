@@ -280,7 +280,9 @@ class Screen2Activity : ComponentActivity() {
             CaptureCoordinator.StreamPathMode.FullAv -> "Toggle to Connection Only or Video or Audio"
         }
         sessionStateText.text = getString(R.string.obs_session_state_value, sessionState)
-        startStreamButton.isEnabled = !isStartInFlight && currentState != ExportFeature.SessionState.Starting
+        startStreamButton.isEnabled = !isStartInFlight &&
+            currentState != ExportFeature.SessionState.Starting &&
+            currentState != ExportFeature.SessionState.Streaming
         validationResultText.text = getString(R.string.obs_validation_value, validationMessage)
         connectionResultText.text = getString(R.string.obs_connection_value, connectionMessage)
         lastErrorText.text = getString(R.string.obs_last_error_value, errorText)
