@@ -5,6 +5,9 @@
 #include <dlfcn.h>
 #include <vector>
 #include <chrono>
+#include <array>
+#include <cstdint>
+#include <cstring>
 
 namespace {
 constexpr const char* kTag = "TempleI-FfmpegStub";
@@ -18,6 +21,12 @@ std::atomic<long long> g_muxBytesProduced{0};
 std::atomic<long long> g_writePacketsSucceeded{0};
 std::atomic<long long> g_writeBytesSucceeded{0};
 std::atomic<long long> g_writePacketsFailed{0};
+std::atomic<long long> g_auAcceptedVideo{0};
+std::atomic<long long> g_auAcceptedAudio{0};
+std::atomic<long long> g_muxPacketsWritten{0};
+std::atomic<long long> g_muxBytesWritten{0};
+std::atomic<long long> g_muxWriteFailures{0};
+std::atomic<bool> g_firstPacketWritten{false};
 std::atomic<long long> g_connectAttempts{0};
 std::atomic<long long> g_connectSuccess{0};
 std::atomic<long long> g_connectFailures{0};
@@ -59,6 +68,7 @@ void* g_avutilHandle = nullptr;
 
 using AvformatNetworkInitFn = int (*)();
 using AvformatAllocOutputContext2Fn = int (*)(void**, void*, const char*, const char*);
+using AvformatNewStreamFn = void* (*)(void*, const void*);
 using AvioOpen2Fn = int (*)(void**, const char*, int, void*, void*);
 using AvioClosepFn = int (*)(void**);
 using AvioWriteFn = void (*)(void*, const unsigned char*, int);
@@ -67,9 +77,16 @@ using AvformatWriteHeaderFn = int (*)(void*, void*);
 using AvInterleavedWriteFrameFn = int (*)(void*, void*);
 using AvWriteTrailerFn = int (*)(void*);
 using AvformatFreeContextFn = void (*)(void*);
+using AvPacketAllocFn = void* (*)();
+using AvPacketFreeFn = void (*)(void**);
+using AvPacketUnrefFn = void (*)(void*);
+using AvNewPacketFn = int (*)(void*, int);
+using AvRescaleQFn = int64_t (*)(int64_t, void*, void*);
+using AvStrerrorFn = int (*)(int, char*, size_t);
 
 AvformatNetworkInitFn g_avformatNetworkInitFn = nullptr;
 AvformatAllocOutputContext2Fn g_avformatAllocOutputContext2Fn = nullptr;
+AvformatNewStreamFn g_avformatNewStreamFn = nullptr;
 AvioOpen2Fn g_avioOpen2Fn = nullptr;
 AvioClosepFn g_avioClosepFn = nullptr;
 AvioWriteFn g_avioWriteFn = nullptr;
@@ -78,16 +95,131 @@ AvformatWriteHeaderFn g_avformatWriteHeaderFn = nullptr;
 AvInterleavedWriteFrameFn g_avInterleavedWriteFrameFn = nullptr;
 AvWriteTrailerFn g_avWriteTrailerFn = nullptr;
 AvformatFreeContextFn g_avformatFreeContextFn = nullptr;
+AvPacketAllocFn g_avPacketAllocFn = nullptr;
+AvPacketFreeFn g_avPacketFreeFn = nullptr;
+AvPacketUnrefFn g_avPacketUnrefFn = nullptr;
+AvNewPacketFn g_avNewPacketFn = nullptr;
+AvRescaleQFn g_avRescaleQFn = nullptr;
+AvStrerrorFn g_avStrerrorFn = nullptr;
 
 void* g_outputFormatContext = nullptr;
 void* g_outputIoContext = nullptr;
+void* g_videoStream = nullptr;
+void* g_audioStream = nullptr;
+int g_videoStreamIndex = -1;
+int g_audioStreamIndex = -1;
 std::string g_output_url;
 std::atomic<bool> g_outputOpened{false};
 std::atomic<bool> g_headerWritten{false};
 
+struct AvRationalCompat {
+    int num;
+    int den;
+};
+
+struct AvPacketCompat {
+    void* buf;
+    int64_t pts;
+    int64_t dts;
+    uint8_t* data;
+    int size;
+    int stream_index;
+    int flags;
+    void* side_data;
+    int side_data_elems;
+    int64_t duration;
+    int64_t pos;
+    void* opaque;
+    void* opaque_ref;
+    AvRationalCompat time_base;
+};
+
+struct AvCodecParametersCompat {
+    int codec_type;
+    int codec_id;
+    uint32_t codec_tag;
+    uint8_t* extradata;
+    int extradata_size;
+    int format;
+    int64_t bit_rate;
+    int bits_per_coded_sample;
+    int bits_per_raw_sample;
+    int profile;
+    int level;
+    int width;
+    int height;
+    AvRationalCompat sample_aspect_ratio;
+    int field_order;
+    AvRationalCompat framerate;
+    int color_range;
+    int color_primaries;
+    int color_trc;
+    int color_space;
+    int chroma_location;
+    int video_delay;
+    uint64_t channel_layout;
+    int channels;
+    int sample_rate;
+    int block_align;
+    int frame_size;
+    int initial_padding;
+    int trailing_padding;
+    int seek_preroll;
+};
+
+struct AvStreamCompat {
+    int index;
+    int id;
+    void* codec;
+    void* priv_data;
+    AvRationalCompat time_base;
+    int64_t start_time;
+    int64_t duration;
+    int64_t nb_frames;
+    int disposition;
+    int discard;
+    AvRationalCompat sample_aspect_ratio;
+    void* metadata;
+    AvRationalCompat avg_frame_rate;
+    void* attached_pic;
+    void* side_data;
+    int nb_side_data;
+    int event_flags;
+    void* r_frame_rate;
+    void* recommended_encoder_configuration;
+    AvCodecParametersCompat* codecpar;
+};
+
+constexpr int kAvMediaTypeVideo = 0;
+constexpr int kAvMediaTypeAudio = 1;
+constexpr int kAvCodecIdH264 = 27;
+constexpr int kAvCodecIdAac = 86018;
+constexpr int kAvPktFlagKey = 0x0001;
+
 void set_error(const std::string& message) {
     g_last_error = message;
     __android_log_print(ANDROID_LOG_ERROR, kTag, "%s", message.c_str());
+}
+
+long long now_ms();
+
+std::string ffmpeg_error_string(int code) {
+    if (g_avStrerrorFn == nullptr) {
+        return std::to_string(code);
+    }
+    std::array<char, 256> buffer{};
+    if (g_avStrerrorFn(code, buffer.data(), buffer.size()) == 0) {
+        return std::string(buffer.data());
+    }
+    return std::to_string(code);
+}
+
+void log_mux_milestone(const std::string& event, const std::string& detail = "") {
+    if (detail.empty()) {
+        __android_log_print(ANDROID_LOG_INFO, kTag, "milestone=%s", event.c_str());
+    } else {
+        __android_log_print(ANDROID_LOG_INFO, kTag, "milestone=%s %s", event.c_str(), detail.c_str());
+    }
 }
 
 std::string probeRuntimeSymbols() {
@@ -107,6 +239,7 @@ std::string probeRuntimeSymbols() {
 
     g_avformatNetworkInitFn = reinterpret_cast<AvformatNetworkInitFn>(dlsym(g_avformatHandle, "avformat_network_init"));
     g_avformatAllocOutputContext2Fn = reinterpret_cast<AvformatAllocOutputContext2Fn>(dlsym(g_avformatHandle, "avformat_alloc_output_context2"));
+    g_avformatNewStreamFn = reinterpret_cast<AvformatNewStreamFn>(dlsym(g_avformatHandle, "avformat_new_stream"));
     g_avioOpen2Fn = reinterpret_cast<AvioOpen2Fn>(dlsym(g_avformatHandle, "avio_open2"));
     g_avioClosepFn = reinterpret_cast<AvioClosepFn>(dlsym(g_avformatHandle, "avio_closep"));
     g_avioWriteFn = reinterpret_cast<AvioWriteFn>(dlsym(g_avformatHandle, "avio_write"));
@@ -115,10 +248,17 @@ std::string probeRuntimeSymbols() {
     g_avInterleavedWriteFrameFn = reinterpret_cast<AvInterleavedWriteFrameFn>(dlsym(g_avformatHandle, "av_interleaved_write_frame"));
     g_avWriteTrailerFn = reinterpret_cast<AvWriteTrailerFn>(dlsym(g_avformatHandle, "av_write_trailer"));
     g_avformatFreeContextFn = reinterpret_cast<AvformatFreeContextFn>(dlsym(g_avformatHandle, "avformat_free_context"));
+    g_avPacketAllocFn = reinterpret_cast<AvPacketAllocFn>(dlsym(g_avcodecHandle, "av_packet_alloc"));
+    g_avPacketFreeFn = reinterpret_cast<AvPacketFreeFn>(dlsym(g_avcodecHandle, "av_packet_free"));
+    g_avPacketUnrefFn = reinterpret_cast<AvPacketUnrefFn>(dlsym(g_avcodecHandle, "av_packet_unref"));
+    g_avNewPacketFn = reinterpret_cast<AvNewPacketFn>(dlsym(g_avcodecHandle, "av_new_packet"));
+    g_avRescaleQFn = reinterpret_cast<AvRescaleQFn>(dlsym(g_avutilHandle, "av_rescale_q"));
+    g_avStrerrorFn = reinterpret_cast<AvStrerrorFn>(dlsym(g_avutilHandle, "av_strerror"));
 
     g_probe_state.ffmpegSymbolsLoaded =
         g_avformatNetworkInitFn != nullptr &&
         g_avformatAllocOutputContext2Fn != nullptr &&
+        g_avformatNewStreamFn != nullptr &&
         g_avioOpen2Fn != nullptr &&
         g_avioClosepFn != nullptr &&
         g_avioWriteFn != nullptr &&
@@ -126,7 +266,13 @@ std::string probeRuntimeSymbols() {
         g_avformatWriteHeaderFn != nullptr &&
         g_avInterleavedWriteFrameFn != nullptr &&
         g_avWriteTrailerFn != nullptr &&
-        g_avformatFreeContextFn != nullptr;
+        g_avformatFreeContextFn != nullptr &&
+        g_avPacketAllocFn != nullptr &&
+        g_avPacketFreeFn != nullptr &&
+        g_avPacketUnrefFn != nullptr &&
+        g_avNewPacketFn != nullptr &&
+        g_avRescaleQFn != nullptr &&
+        g_avStrerrorFn != nullptr;
 
     if (!g_probe_state.ffmpegSymbolsLoaded) {
         const char* dlErr = dlerror();
@@ -134,7 +280,8 @@ std::string probeRuntimeSymbols() {
         return g_probe_state.details;
     }
 
-    g_probe_state.details = "ffmpeg symbols resolved (runtimeMode=active; mux/send bridge enabled with timestamp+codec guards)";
+    g_probe_state.details = "ffmpeg symbols resolved (runtimeMode=active; canonical mux packet bridge enabled)";
+    log_mux_milestone("runtime-probe-ok", g_probe_state.details);
     return g_probe_state.details;
 }
 
@@ -151,9 +298,155 @@ bool runtimeReadyForPrepare() {
     return true;
 }
 
+void reset_mux_runtime_counters() {
+    g_auAcceptedVideo.store(0);
+    g_auAcceptedAudio.store(0);
+    g_muxPacketsWritten.store(0);
+    g_muxBytesWritten.store(0);
+    g_muxWriteFailures.store(0);
+    g_firstPacketWritten.store(false);
+}
+
+bool declare_output_streams(bool videoEnabled, bool audioEnabled) {
+    g_videoStream = nullptr;
+    g_audioStream = nullptr;
+    g_videoStreamIndex = -1;
+    g_audioStreamIndex = -1;
+
+    if (videoEnabled) {
+        g_videoStream = g_avformatNewStreamFn(g_outputFormatContext, nullptr);
+        if (g_videoStream == nullptr) {
+            set_error("nativePrepare failed: avformat_new_stream(video) returned null");
+            return false;
+        }
+        auto* stream = reinterpret_cast<AvStreamCompat*>(g_videoStream);
+        g_videoStreamIndex = stream->index;
+        stream->time_base = AvRationalCompat{1, 1'000'000};
+        if (stream->codecpar == nullptr) {
+            set_error("nativePrepare failed: video codecpar unavailable");
+            return false;
+        }
+        stream->codecpar->codec_type = kAvMediaTypeVideo;
+        stream->codecpar->codec_id = kAvCodecIdH264;
+        stream->codecpar->width = 1280;
+        stream->codecpar->height = 720;
+        log_mux_milestone("stream-declared", "type=video codec=h264 tb=1/1000000");
+    }
+
+    if (audioEnabled) {
+        g_audioStream = g_avformatNewStreamFn(g_outputFormatContext, nullptr);
+        if (g_audioStream == nullptr) {
+            set_error("nativePrepare failed: avformat_new_stream(audio) returned null");
+            return false;
+        }
+        auto* stream = reinterpret_cast<AvStreamCompat*>(g_audioStream);
+        g_audioStreamIndex = stream->index;
+        stream->time_base = AvRationalCompat{1, 1'000'000};
+        if (stream->codecpar == nullptr) {
+            set_error("nativePrepare failed: audio codecpar unavailable");
+            return false;
+        }
+        stream->codecpar->codec_type = kAvMediaTypeAudio;
+        stream->codecpar->codec_id = kAvCodecIdAac;
+        stream->codecpar->sample_rate = 48'000;
+        stream->codecpar->channels = 1;
+        log_mux_milestone("stream-declared", "type=audio codec=aac tb=1/1000000");
+    }
+
+    return true;
+}
+
+bool write_access_unit_packet(
+    const std::vector<unsigned char>& payload,
+    int streamIndex,
+    long long normalizedPtsUs,
+    int flags,
+    bool isVideo
+) {
+    if (streamIndex < 0) {
+        g_writePacketsFailed.fetch_add(1);
+        g_consecutiveWriteFailures.fetch_add(1);
+        g_muxWriteFailures.fetch_add(1);
+        set_error("native write failed: stream not declared");
+        return false;
+    }
+
+    if (!g_started.load() || !g_outputOpened.load() || !g_headerWritten.load() || g_outputFormatContext == nullptr) {
+        g_writePacketsFailed.fetch_add(1);
+        g_consecutiveWriteFailures.fetch_add(1);
+        g_muxWriteFailures.fetch_add(1);
+        set_error("native write failed: output lifecycle not active");
+        return false;
+    }
+
+    void* packetRaw = g_avPacketAllocFn();
+    if (packetRaw == nullptr) {
+        g_writePacketsFailed.fetch_add(1);
+        g_consecutiveWriteFailures.fetch_add(1);
+        g_muxWriteFailures.fetch_add(1);
+        set_error("native write failed: av_packet_alloc returned null");
+        return false;
+    }
+
+    auto* packet = reinterpret_cast<AvPacketCompat*>(packetRaw);
+    const int newPacketResult = g_avNewPacketFn(packetRaw, static_cast<int>(payload.size()));
+    if (newPacketResult < 0) {
+        g_avPacketFreeFn(&packetRaw);
+        g_writePacketsFailed.fetch_add(1);
+        g_consecutiveWriteFailures.fetch_add(1);
+        g_muxWriteFailures.fetch_add(1);
+        set_error("native write failed: av_new_packet returned " + ffmpeg_error_string(newPacketResult));
+        return false;
+    }
+
+    std::memcpy(packet->data, payload.data(), payload.size());
+    packet->stream_index = streamIndex;
+    const AvRationalCompat srcTimeBase{1, 1'000'000};
+    const auto* stream = reinterpret_cast<AvStreamCompat*>(isVideo ? g_videoStream : g_audioStream);
+    const AvRationalCompat dstTimeBase = stream != nullptr ? stream->time_base : srcTimeBase;
+    const int64_t scaledPts = g_avRescaleQFn(normalizedPtsUs, const_cast<AvRationalCompat*>(&srcTimeBase), const_cast<AvRationalCompat*>(&dstTimeBase));
+    packet->pts = scaledPts;
+    packet->dts = scaledPts;
+    packet->duration = g_avRescaleQFn(isVideo ? 33'333 : 21'333, const_cast<AvRationalCompat*>(&srcTimeBase), const_cast<AvRationalCompat*>(&dstTimeBase));
+    if ((flags & 1) != 0) {
+        packet->flags |= kAvPktFlagKey;
+    }
+
+    const int writeResult = g_avInterleavedWriteFrameFn(g_outputFormatContext, packetRaw);
+    if (writeResult < 0) {
+        g_avPacketUnrefFn(packetRaw);
+        g_avPacketFreeFn(&packetRaw);
+        g_writePacketsFailed.fetch_add(1);
+        g_consecutiveWriteFailures.fetch_add(1);
+        g_muxWriteFailures.fetch_add(1);
+        set_error("native write failed: av_interleaved_write_frame returned " + ffmpeg_error_string(writeResult));
+        log_mux_milestone("packet-write-failed", "err=" + ffmpeg_error_string(writeResult));
+        return false;
+    }
+
+    g_muxPacketsWritten.fetch_add(1);
+    g_muxBytesWritten.fetch_add(static_cast<long long>(payload.size()));
+    g_writePacketsSucceeded.store(g_muxPacketsWritten.load());
+    g_writeBytesSucceeded.store(g_muxBytesWritten.load());
+    g_consecutiveWriteFailures.store(0);
+    g_lastSuccessfulWriteMs.store(now_ms());
+    if (!g_firstPacketWritten.exchange(true)) {
+        log_mux_milestone("first-packet-written", "streamIndex=" + std::to_string(streamIndex));
+    }
+
+    g_avPacketUnrefFn(packetRaw);
+    g_avPacketFreeFn(&packetRaw);
+    return true;
+}
+
 void closeOutputArtifacts() {
     if (g_headerWritten.load() && g_outputFormatContext != nullptr && g_avWriteTrailerFn != nullptr) {
-        g_avWriteTrailerFn(g_outputFormatContext);
+        const int trailerResult = g_avWriteTrailerFn(g_outputFormatContext);
+        if (trailerResult < 0) {
+            set_error("nativeStop trailer failed: " + ffmpeg_error_string(trailerResult));
+        } else {
+            log_mux_milestone("trailer-written");
+        }
     }
     g_headerWritten.store(false);
 
@@ -167,6 +460,10 @@ void closeOutputArtifacts() {
         g_avformatFreeContextFn(g_outputFormatContext);
     }
     g_outputFormatContext = nullptr;
+    g_videoStream = nullptr;
+    g_audioStream = nullptr;
+    g_videoStreamIndex = -1;
+    g_audioStreamIndex = -1;
 }
 
 long long now_ms() {
@@ -210,24 +507,6 @@ long long normalize_pts(
 
     lastPtsStorage.store(incomingPtsUs);
     return incomingPtsUs;
-}
-
-bool write_payload_bytes(const std::vector<unsigned char>& payload) {
-    if (!g_started.load() || !g_outputOpened.load() || !g_headerWritten.load() || g_outputIoContext == nullptr) {
-        g_writePacketsFailed.fetch_add(1);
-        g_consecutiveWriteFailures.fetch_add(1);
-        set_error("native write failed: output lifecycle not active");
-        return false;
-    }
-
-    g_avioWriteFn(g_outputIoContext, payload.data(), static_cast<int>(payload.size()));
-    g_avioFlushFn(g_outputIoContext);
-
-    g_writePacketsSucceeded.fetch_add(1);
-    g_writeBytesSucceeded.fetch_add(static_cast<long long>(payload.size()));
-    g_consecutiveWriteFailures.store(0);
-    g_lastSuccessfulWriteMs.store(now_ms());
-    return true;
 }
 
 int findStartCodePrefixSize(const std::vector<unsigned char>& data, size_t index) {
@@ -362,11 +641,17 @@ Java_com_example_templei_feature_export_FfmpegNativeBridge_nativePrepare(
     void* formatContext = nullptr;
     const int allocResult = g_avformatAllocOutputContext2Fn(&formatContext, nullptr, "mpegts", g_output_url.c_str());
     if (allocResult < 0 || formatContext == nullptr) {
-        set_error("nativePrepare failed: avformat_alloc_output_context2 returned " + std::to_string(allocResult));
+        set_error("nativePrepare failed: avformat_alloc_output_context2 returned " + ffmpeg_error_string(allocResult));
         closeOutputArtifacts();
         return JNI_FALSE;
     }
     g_outputFormatContext = formatContext;
+    log_mux_milestone("output-context-allocated", "format=mpegts");
+
+    if (!declare_output_streams(video_enabled == JNI_TRUE, audio_enabled == JNI_TRUE)) {
+        closeOutputArtifacts();
+        return JNI_FALSE;
+    }
 
     g_prepared.store(true);
     g_started.store(false);
@@ -377,6 +662,7 @@ Java_com_example_templei_feature_export_FfmpegNativeBridge_nativePrepare(
     g_writePacketsSucceeded.store(0);
     g_writeBytesSucceeded.store(0);
     g_writePacketsFailed.store(0);
+    reset_mux_runtime_counters();
     g_connectAttempts.store(0);
     g_connectSuccess.store(0);
     g_connectFailures.store(0);
@@ -415,6 +701,7 @@ Java_com_example_templei_feature_export_FfmpegNativeBridge_nativePrepare(
         video_enabled ? 1 : 0,
         audio_enabled ? 1 : 0
     );
+    log_mux_milestone("prepare-complete", std::string("url=") + g_output_url);
     return JNI_TRUE;
 }
 
@@ -442,21 +729,23 @@ Java_com_example_templei_feature_export_FfmpegNativeBridge_nativeStart(JNIEnv*, 
     const int openResult = g_avioOpen2Fn(&ioContext, g_output_url.c_str(), kAvioFlagWrite, nullptr, nullptr);
     if (openResult < 0 || ioContext == nullptr) {
         g_connectFailures.fetch_add(1);
-        set_error("nativeStart failed: avio_open2 returned " + std::to_string(openResult));
+        set_error("nativeStart failed: avio_open2 returned " + ffmpeg_error_string(openResult));
         closeOutputArtifacts();
         return JNI_FALSE;
     }
     g_outputIoContext = ioContext;
     g_outputOpened.store(true);
+    log_mux_milestone("output-opened", std::string("url=") + g_output_url);
 
     const int headerResult = g_avformatWriteHeaderFn(g_outputFormatContext, nullptr);
     if (headerResult < 0) {
         g_connectFailures.fetch_add(1);
-        set_error("nativeStart failed: avformat_write_header returned " + std::to_string(headerResult));
+        set_error("nativeStart failed: avformat_write_header returned " + ffmpeg_error_string(headerResult));
         closeOutputArtifacts();
         return JNI_FALSE;
     }
     g_headerWritten.store(true);
+    log_mux_milestone("header-written");
 
     g_connectSuccess.fetch_add(1);
     g_started.store(true);
@@ -509,9 +798,10 @@ Java_com_example_templei_feature_export_FfmpegNativeBridge_nativePushVideoAccess
     }
 
     const long long count = g_videoAuCount.fetch_add(1) + 1;
+    g_auAcceptedVideo.fetch_add(1);
     g_muxPacketsProduced.fetch_add(1);
     g_muxBytesProduced.fetch_add(size);
-    if (!write_payload_bytes(payload)) {
+    if (!write_access_unit_packet(payload, g_videoStreamIndex, normalizedPtsUs, flags, true)) {
         return JNI_FALSE;
     }
     if (count <= 5 || (count % 120) == 0) {
@@ -575,9 +865,10 @@ Java_com_example_templei_feature_export_FfmpegNativeBridge_nativePushAudioAccess
     }
 
     const long long count = g_audioAuCount.fetch_add(1) + 1;
+    g_auAcceptedAudio.fetch_add(1);
     g_muxPacketsProduced.fetch_add(1);
     g_muxBytesProduced.fetch_add(size);
-    if (!write_payload_bytes(payload)) {
+    if (!write_access_unit_packet(payload, g_audioStreamIndex, normalizedPtsUs, flags, false)) {
         return JNI_FALSE;
     }
     if (count <= 5 || (count % 120) == 0) {
@@ -602,6 +893,8 @@ Java_com_example_templei_feature_export_FfmpegNativeBridge_nativeStop(JNIEnv*, j
     g_prepared.store(false);
     g_videoConfigReady.store(false);
     g_audioConfigReady.store(false);
+    reset_mux_runtime_counters();
+    log_mux_milestone("shutdown-complete");
     __android_log_print(ANDROID_LOG_INFO, kTag, "nativeStop");
 }
 
@@ -627,8 +920,14 @@ Java_com_example_templei_feature_export_FfmpegNativeBridge_nativeStatsSnapshot(J
         " outputUrl=" + (g_output_url.empty() ? std::string("none") : g_output_url) +
         " videoAu=" + std::to_string(g_videoAuCount.load()) +
         " audioAu=" + std::to_string(g_audioAuCount.load()) +
+        " auAcceptedVideo=" + std::to_string(g_auAcceptedVideo.load()) +
+        " auAcceptedAudio=" + std::to_string(g_auAcceptedAudio.load()) +
         " muxPacketsProduced=" + std::to_string(g_muxPacketsProduced.load()) +
         " muxBytesProduced=" + std::to_string(g_muxBytesProduced.load()) +
+        " muxPacketsWritten=" + std::to_string(g_muxPacketsWritten.load()) +
+        " muxBytesWritten=" + std::to_string(g_muxBytesWritten.load()) +
+        " muxWriteFailures=" + std::to_string(g_muxWriteFailures.load()) +
+        " firstPacketWritten=" + (g_firstPacketWritten.load() ? "true" : "false") +
         " writePacketsSucceeded=" + std::to_string(g_writePacketsSucceeded.load()) +
         " writeBytesSucceeded=" + std::to_string(g_writeBytesSucceeded.load()) +
         " writePacketsFailed=" + std::to_string(g_writePacketsFailed.load()) +
