@@ -131,8 +131,14 @@ object CaptureCoordinator {
             return StartResult(isReady = true)
         }
 
-        val captureReady = CameraFeature.ensureCapturePipeline(context) {
-            Log.e(TAG, "camera capture pipeline unavailable on selected lens")
+        val captureReady = runCatching {
+            CameraFeature.ensureCapturePipeline(context) {
+                Log.e(TAG, "camera capture pipeline unavailable on selected lens")
+            }
+        }.getOrElse { error ->
+            val reason = error.message?.ifBlank { error::class.java.simpleName } ?: error::class.java.simpleName
+            Log.e(TAG, "camera capture pipeline start failed: $reason", error)
+            return StartResult(isReady = false, error = "camera capture pipeline start failed: $reason")
         }
         if (!captureReady) {
             return StartResult(isReady = false, error = "camera capture pipeline not running")
