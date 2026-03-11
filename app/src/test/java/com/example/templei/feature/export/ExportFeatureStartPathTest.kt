@@ -169,6 +169,28 @@ class ExportFeatureStartPathTest {
         }
     }
 
+
+    @Test
+    fun `status explains that connection only mode is validation only before start`() {
+        val backend = ScriptedBackend(
+            available = true,
+            startResult = Result.success(Unit),
+            diagnostics = "started=false connState=idle stats={packetsWritten=0} runtime={runtimeMode=jni} lastErr={none}",
+        )
+        NativeStreamBackends.installBackendForTesting(backend)
+        try {
+            val config = ExportFeature.ObsStreamConfig(
+                host = "192.168.1.50",
+                port = 9000,
+                streamMode = CaptureCoordinator.StreamPathMode.ConnectionOnly,
+            )
+
+            val status = ExportFeature.interoperabilityStatus(config)
+            assertTrue(status.contains("connection-only mode validates endpoint only"))
+        } finally {
+            NativeStreamBackends.installBackendForTesting(null)
+        }
+    }
     private class ScriptedBackend(
         private val available: Boolean,
         private val startResult: Result<Unit>,

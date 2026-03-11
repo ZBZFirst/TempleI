@@ -270,6 +270,12 @@ private object FfmpegStreamBackend : NativeStreamBackend {
             }
         }
 
+        if (!videoEnabled && !audioEnabled) {
+            val message = "connection-only mode cannot start native stream output; select Video, Audio, or Both"
+            lastError = message
+            return Result.failure(IllegalStateException(message))
+        }
+
         val runtimeResult = resolveRuntime()
         if (runtimeResult.isFailure) {
             return Result.failure(runtimeResult.exceptionOrNull() ?: IllegalStateException("ffmpeg runtime unavailable"))
