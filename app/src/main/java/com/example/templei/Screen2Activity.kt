@@ -279,10 +279,10 @@ class Screen2Activity : ComponentActivity() {
             ExportFeature.streamModeLabel(currentConfig.streamMode),
         )
         toggleStreamPathButton.text = when (currentConfig.streamMode) {
-            CaptureCoordinator.StreamPathMode.ConnectionOnly -> "Toggle to Video or Audio or Both"
-            CaptureCoordinator.StreamPathMode.VideoOnly -> "Toggle to Audio or Both or Connection Only"
-            CaptureCoordinator.StreamPathMode.AudioOnly -> "Toggle to Both or Connection Only or Video"
-            CaptureCoordinator.StreamPathMode.FullAv -> "Toggle to Connection Only or Video or Audio"
+            CaptureCoordinator.StreamPathMode.ConnectionOnly -> "Toggle to Audio or Both"
+            CaptureCoordinator.StreamPathMode.VideoOnly -> "Toggle to Audio or Both"
+            CaptureCoordinator.StreamPathMode.AudioOnly -> "Toggle to Both or Video"
+            CaptureCoordinator.StreamPathMode.FullAv -> "Toggle to Video or Audio"
         }
         sessionStateText.text = getString(R.string.obs_session_state_value, sessionState)
         startStreamButton.isEnabled = !isStartInFlight &&

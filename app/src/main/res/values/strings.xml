@@ -27,7 +27,7 @@
     <string name="obs_section_b_title">Section B · Stream Controls</string>
     <string name="obs_section_b_summary">Copy OBS Media Source Input URL, paste into OBS, then run Start/Stop controls (toggle stream path as needed).</string>
     <string name="obs_button_show_input">Show OBS Input URL</string>
-    <string name="obs_button_toggle_profile">No Video or Audio, Connection Only (Default)</string>
+    <string name="obs_button_toggle_profile">Video Only (Default)</string>
     <string name="obs_button_start_stream">Start Stream</string>
     <string name="obs_button_stop_stream">Stop Stream</string>
     <string name="obs_button_copy_diagnostics">Copy Diagnostics Snapshot</string>
