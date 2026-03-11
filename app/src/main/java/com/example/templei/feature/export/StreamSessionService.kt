@@ -27,6 +27,11 @@ class StreamSessionService : Service() {
 
     inner class LocalBinder : Binder() {
         fun startSession(config: ExportFeature.ObsStreamConfig): ExportFeature.StreamResult {
+            val currentState = ExportFeature.currentState()
+            if (currentState == ExportFeature.SessionState.Streaming || currentState == ExportFeature.SessionState.Starting) {
+                return ExportFeature.StreamResult(state = currentState)
+            }
+
             val captureReady = CaptureCoordinator.startCapturePathSession(this@StreamSessionService, config)
             if (!captureReady.isReady) {
                 return ExportFeature.markFault("capture path not ready: ${captureReady.error.orEmpty()}")

@@ -145,6 +145,30 @@ class ExportFeatureStartPathTest {
         }
     }
 
+    @Test
+    fun `start stream is idempotent when session is already streaming`() {
+        val backend = ScriptedBackend(
+            available = true,
+            startResult = Result.success(Unit),
+            diagnostics = "started=true connState=connected stats={writePacketsSucceeded=5 packetsWritten=5 outputOpened=true headerWritten=true consecutiveWriteFailures=0} runtime={runtimeMode=jni} lastErr={none}",
+        )
+        NativeStreamBackends.installBackendForTesting(backend)
+        try {
+            val config = ExportFeature.ObsStreamConfig(host = "192.168.1.50", port = 9000)
+
+            val firstStart = ExportFeature.startStream(config)
+            val secondStart = ExportFeature.startStream(config)
+
+            assertEquals(ExportFeature.SessionState.Streaming, firstStart.state)
+            assertEquals(ExportFeature.SessionState.Streaming, secondStart.state)
+            assertEquals(1, backend.startInvocationCount)
+
+            ExportFeature.stopStream()
+        } finally {
+            NativeStreamBackends.installBackendForTesting(null)
+        }
+    }
+
     private class ScriptedBackend(
         private val available: Boolean,
         private val startResult: Result<Unit>,
@@ -152,12 +176,14 @@ class ExportFeatureStartPathTest {
     ) : NativeStreamBackend {
         override val id: NativeStreamBackend.BackendId = NativeStreamBackend.BackendId.Ffmpeg
         var stateSeenDuringStart: ExportFeature.SessionState? = null
+        var startInvocationCount: Int = 0
 
         override fun isAvailable(): Boolean = available
 
         override fun availabilityMessage(): String = if (available) "test backend ready" else "test backend unavailable"
 
         override fun start(endpoint: ObsEndpointSpec, streamMode: CaptureCoordinator.StreamPathMode): Result<Unit> {
+            startInvocationCount += 1
             stateSeenDuringStart = ExportFeature.currentState()
             return startResult
         }
