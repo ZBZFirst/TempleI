@@ -16,13 +16,7 @@ extern "C" {
 #include <vector>
 
 namespace {
-constexpr const char* kStreamTag = "TempleI-Stream";
-constexpr const char* kVideoTag = "TempleI-VideoEnc";
-constexpr const char* kAudioTag = "TempleI-AudioEnc";
-constexpr const char* kMuxTag = "TempleI-Mux";
-constexpr const char* kSrtTag = "TempleI-SRT";
-constexpr const char* kNetTag = "TempleI-Net";
-constexpr const char* kErrorTag = "TempleI-Error";
+constexpr const char* kTag = "TempleI-FfmpegStub";
 constexpr AVRational kInputPtsTimebase{1, 1'000'000};
 
 std::atomic<bool> g_prepared{false};
@@ -86,7 +80,7 @@ long long now_ms() {
 
 void set_error(const std::string& message) {
     g_last_error = message;
-    __android_log_print(ANDROID_LOG_ERROR, kErrorTag, "tsMs=%lld %s", now_ms(), message.c_str());
+    __android_log_print(ANDROID_LOG_ERROR, kTag, "%s", message.c_str());
 }
 
 std::string ffmpeg_error_string(int code) {
@@ -97,9 +91,9 @@ std::string ffmpeg_error_string(int code) {
 
 void log_mux_milestone(const std::string& event, const std::string& detail = "") {
     if (detail.empty()) {
-        __android_log_print(ANDROID_LOG_INFO, kMuxTag, "tsMs=%lld milestone=%s", now_ms(), event.c_str());
+        __android_log_print(ANDROID_LOG_INFO, kTag, "milestone=%s", event.c_str());
     } else {
-        __android_log_print(ANDROID_LOG_INFO, kMuxTag, "tsMs=%lld milestone=%s %s", now_ms(), event.c_str(), detail.c_str());
+        __android_log_print(ANDROID_LOG_INFO, kTag, "milestone=%s %s", event.c_str(), detail.c_str());
     }
 }
 
@@ -116,10 +110,9 @@ void refresh_runtime_info() {
 void log_output_protocol_diagnostics() {
     const char* configuration = avformat_configuration();
     __android_log_print(
-        ANDROID_LOG_DEBUG,
-        kSrtTag,
-        "tsMs=%lld ffmpeg avformat_configuration=%s",
-        now_ms(),
+        ANDROID_LOG_INFO,
+        kTag,
+        "ffmpeg avformat_configuration=%s",
         configuration == nullptr ? "(null)" : configuration
     );
 
@@ -127,7 +120,7 @@ void log_output_protocol_diagnostics() {
     const char* protocol = nullptr;
     bool srtFound = false;
     while ((protocol = avio_enum_protocols(&opaque, 1)) != nullptr) {
-        __android_log_print(ANDROID_LOG_DEBUG, kSrtTag, "tsMs=%lld ffmpeg output protocol=%s", now_ms(), protocol);
+        __android_log_print(ANDROID_LOG_INFO, kTag, "ffmpeg output protocol=%s", protocol);
         if (!srtFound && std::string(protocol) == "srt") {
             srtFound = true;
         }
@@ -135,9 +128,8 @@ void log_output_protocol_diagnostics() {
 
     __android_log_print(
         ANDROID_LOG_INFO,
-        kSrtTag,
-        "tsMs=%lld ffmpeg output protocol contains_srt=%d",
-        now_ms(),
+        kTag,
+        "ffmpeg output protocol contains_srt=%d",
         srtFound ? 1 : 0
     );
 }
@@ -272,7 +264,6 @@ bool validateAudioCodecReadiness(const std::vector<unsigned char>& data) {
     }
 
     g_audioConfigReady.store(true);
-    __android_log_print(ANDROID_LOG_INFO, kAudioTag, "tsMs=%lld milestone=AAC config received", now_ms());
     return true;
 }
 
@@ -293,7 +284,7 @@ bool declare_output_streams(bool videoEnabled, bool audioEnabled) {
         g_videoStream->codecpar->width = 1280;
         g_videoStream->codecpar->height = 720;
         g_videoStream->codecpar->format = AV_PIX_FMT_YUV420P;
-        log_mux_milestone("stream added", "type=video codec=h264 tb=1/1000000");
+        log_mux_milestone("stream-declared", "type=video codec=h264 tb=1/1000000");
     }
 
     if (audioEnabled) {
@@ -310,7 +301,7 @@ bool declare_output_streams(bool videoEnabled, bool audioEnabled) {
         g_audioStream->codecpar->channels = 1;
         g_audioStream->codecpar->channel_layout = AV_CH_LAYOUT_MONO;
         g_audioStream->codecpar->format = AV_SAMPLE_FMT_FLTP;
-        log_mux_milestone("stream added", "type=audio codec=aac tb=1/1000000");
+        log_mux_milestone("stream-declared", "type=audio codec=aac tb=1/1000000");
     }
 
     return true;
@@ -375,7 +366,6 @@ bool write_access_unit_packet(
         g_consecutiveWriteFailures.fetch_add(1);
         g_muxWriteFailures.fetch_add(1);
         set_error("native write failed: av_interleaved_write_frame returned " + ffmpeg_error_string(writeResult));
-        __android_log_print(ANDROID_LOG_ERROR, kErrorTag, "tsMs=%lld packet write failure code=%d error=%s", now_ms(), writeResult, ffmpeg_error_string(writeResult).c_str());
         log_mux_milestone("packet-write-failed", "err=" + ffmpeg_error_string(writeResult));
         return false;
     }
@@ -459,7 +449,7 @@ Java_com_example_templei_feature_export_FfmpegNativeBridge_nativePrepare(
         return JNI_FALSE;
     }
     g_outputFormatContext = formatContext;
-    log_mux_milestone("avformat_alloc_output_context2 success", "format=mpegts");
+    log_mux_milestone("output-context-allocated", "format=mpegts");
 
     if (!declare_output_streams(video_enabled == JNI_TRUE, audio_enabled == JNI_TRUE)) {
         closeOutputArtifacts();
@@ -509,9 +499,8 @@ Java_com_example_templei_feature_export_FfmpegNativeBridge_nativePrepare(
 
     __android_log_print(
         ANDROID_LOG_INFO,
-        kNetTag,
-        "tsMs=%lld network host=%s port=%d latency=%d mode=%s video=%d audio=%d",
-        now_ms(),
+        kTag,
+        "nativePrepare host=%s port=%d latency=%d mode=%s video=%d audio=%d",
         host_value.c_str(),
         static_cast<int>(port),
         static_cast<int>(latency_ms),
@@ -519,15 +508,13 @@ Java_com_example_templei_feature_export_FfmpegNativeBridge_nativePrepare(
         video_enabled ? 1 : 0,
         audio_enabled ? 1 : 0
     );
-    __android_log_print(ANDROID_LOG_INFO, kSrtTag, "tsMs=%lld milestone=URL used url=%s", now_ms(), g_output_url.c_str());
     log_mux_milestone("prepare-complete", std::string("url=") + g_output_url);
     return JNI_TRUE;
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_example_templei_feature_export_FfmpegNativeBridge_nativeStart(JNIEnv*, jobject) {
-    const long long attempt = g_connectAttempts.fetch_add(1) + 1;
-    __android_log_print(ANDROID_LOG_INFO, kSrtTag, "tsMs=%lld milestone=avio_open2 attempt=%lld url=%s", now_ms(), attempt, g_output_url.c_str());
+    g_connectAttempts.fetch_add(1);
     if (!g_prepared.load()) {
         g_connectFailures.fetch_add(1);
         set_error("nativeStart failed: backend not prepared");
@@ -543,8 +530,6 @@ Java_com_example_templei_feature_export_FfmpegNativeBridge_nativeStart(JNIEnv*, 
 
     if ((g_outputFormatContext->oformat->flags & AVFMT_NOFILE) == 0) {
         const int openResult = avio_open2(&g_outputFormatContext->pb, g_output_url.c_str(), AVIO_FLAG_WRITE, nullptr, nullptr);
-        __android_log_print(ANDROID_LOG_INFO, kSrtTag, "tsMs=%lld milestone=avio_open2 result code=%d", now_ms(), openResult);
-        __android_log_print(ANDROID_LOG_INFO, kSrtTag, "tsMs=%lld av_strerror=%s", now_ms(), ffmpeg_error_string(openResult).c_str());
         if (openResult < 0 || g_outputFormatContext->pb == nullptr) {
             g_connectFailures.fetch_add(1);
             set_error("nativeStart failed: avio_open2 returned " + ffmpeg_error_string(openResult));
@@ -558,7 +543,6 @@ Java_com_example_templei_feature_export_FfmpegNativeBridge_nativeStart(JNIEnv*, 
     log_mux_milestone("output-opened", std::string("url=") + g_output_url);
 
     const int headerResult = avformat_write_header(g_outputFormatContext, nullptr);
-    __android_log_print(ANDROID_LOG_INFO, kMuxTag, "tsMs=%lld milestone=avformat_write_header result code=%d", now_ms(), headerResult);
     if (headerResult < 0) {
         g_connectFailures.fetch_add(1);
         set_error("nativeStart failed: avformat_write_header returned " + ffmpeg_error_string(headerResult));
@@ -567,11 +551,11 @@ Java_com_example_templei_feature_export_FfmpegNativeBridge_nativeStart(JNIEnv*, 
     }
 
     g_headerWritten.store(true);
-    log_mux_milestone("avformat_write_header success");
+    log_mux_milestone("header-written");
 
     g_connectSuccess.fetch_add(1);
     g_started.store(true);
-    __android_log_print(ANDROID_LOG_INFO, kStreamTag, "tsMs=%lld milestone=stream started outputUrl=%s", now_ms(), g_output_url.c_str());
+    __android_log_print(ANDROID_LOG_INFO, kTag, "nativeStart ok outputUrl=%s", g_output_url.c_str());
     return JNI_TRUE;
 }
 
@@ -622,20 +606,15 @@ Java_com_example_templei_feature_export_FfmpegNativeBridge_nativePushVideoAccess
     g_muxPacketsProduced.fetch_add(1);
     g_muxBytesProduced.fetch_add(size);
 
-    if ((flags & 1) != 0) {
-        __android_log_print(ANDROID_LOG_INFO, kVideoTag, "tsMs=%lld milestone=keyframe detected frame=%lld ptsUs=%lld", now_ms(), count, normalizedPtsUs);
-    }
-
     if (!write_access_unit_packet(payload, g_videoStream, normalizedPtsUs, flags, true)) {
         return JNI_FALSE;
     }
 
     if (count <= 5 || (count % 120) == 0) {
         __android_log_print(
-            ANDROID_LOG_DEBUG,
-            kVideoTag,
-            "tsMs=%lld milestone=encoded frame size frame=%lld bytes=%d ptsUs=%lld flags=%d cfgReady=%d keySeen=%d",
-            now_ms(),
+            ANDROID_LOG_INFO,
+            kTag,
+            "videoAU count=%lld size=%d ptsUs=%lld flags=%d cfgReady=%d keySeen=%d",
             count,
             static_cast<int>(size),
             normalizedPtsUs,
@@ -701,10 +680,9 @@ Java_com_example_templei_feature_export_FfmpegNativeBridge_nativePushAudioAccess
 
     if (count <= 5 || (count % 120) == 0) {
         __android_log_print(
-            ANDROID_LOG_DEBUG,
-            kAudioTag,
-            "tsMs=%lld milestone=encoded frame size frame=%lld bytes=%d ptsUs=%lld flags=%d cfgReady=%d",
-            now_ms(),
+            ANDROID_LOG_INFO,
+            kTag,
+            "audioAU count=%lld size=%d ptsUs=%lld flags=%d cfgReady=%d",
             count,
             static_cast<int>(size),
             normalizedPtsUs,
@@ -726,7 +704,7 @@ Java_com_example_templei_feature_export_FfmpegNativeBridge_nativeStop(JNIEnv*, j
     g_trailerWritten.store(false);
     reset_mux_runtime_counters();
     log_mux_milestone("shutdown-complete");
-    __android_log_print(ANDROID_LOG_INFO, kStreamTag, "tsMs=%lld milestone=stream stopped", now_ms());
+    __android_log_print(ANDROID_LOG_INFO, kTag, "nativeStop");
 }
 
 extern "C" JNIEXPORT jstring JNICALL
