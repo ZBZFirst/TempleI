@@ -196,6 +196,10 @@ object CaptureCoordinator {
             videoOutputListenerAttached = true
             CameraFeature.setFrameOutputListener { frame ->
                 StreamPipelineMetrics.recordCameraArrival()
+                Log.d(
+                    TAG,
+                    "tsMs=${System.currentTimeMillis()} milestone=frame queued to video encoder size=${frame.i420Data.size} ptsUs=${frame.timestampNs / 1_000L}",
+                )
                 enqueueCameraFrame(frame)
             }
             frameOutputListenerAttached = true
@@ -204,6 +208,20 @@ object CaptureCoordinator {
                 stopRelayWorkers()
                 return StartResult(isReady = false, error = VideoEncoderNode.error())
             }
+            Thread {
+                Thread.sleep(3_000L)
+                if (!relayLoopActive) {
+                    return@Thread
+                }
+                val stats = runtimeStats()
+                if (stats.cameraFramesEnqueued == 0L) {
+                    Log.w(TAG, "tsMs=${System.currentTimeMillis()} milestone=analysis stalled timeoutMs=3000")
+                }
+                val videoStats = VideoEncoderNode.runtimeStats()
+                if (videoStats.encodedAccessUnitCount == 0L) {
+                    Log.w(TAG, "tsMs=${System.currentTimeMillis()} milestone=video output missing after start timeoutMs=3000")
+                }
+            }.start()
         } else {
             VideoEncoderNode.setOutputListener(null)
             CameraFeature.setFrameOutputListener(null)

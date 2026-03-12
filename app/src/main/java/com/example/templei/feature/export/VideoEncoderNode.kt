@@ -94,6 +94,7 @@ object VideoEncoderNode {
                 configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
                 start()
             }
+            Log.i(TAG, "tsMs=${System.currentTimeMillis()} milestone=encoders started component=video")
             Log.i(TAG, "tsMs=${System.currentTimeMillis()} milestone=codec selected mime=$MIME_TYPE width=${activeConfig.width} height=${activeConfig.height} fps=${activeConfig.fps} bitrate=${activeConfig.bitrate}")
             nodeState = NodeState.Running
             drainOutput()
@@ -106,6 +107,7 @@ object VideoEncoderNode {
 
     fun queueFrame(frame: CameraFeature.FramePacket) {
         if (nodeState != NodeState.Running) {
+            Log.w(TAG, "tsMs=${System.currentTimeMillis()} milestone=video frame dropped reason=encoder not running state=$nodeState")
             return
         }
 
@@ -114,7 +116,7 @@ object VideoEncoderNode {
         if (frame.width != configuredWidth || frame.height != configuredHeight) {
             val reconfigure = restartForResolution(frame.width, frame.height)
             if (reconfigure.isFailure) {
-                Log.w(TAG, "drop frame due to dimension mismatch frame=${frame.width}x${frame.height} encoder=${configuredWidth}x${configuredHeight}")
+                Log.w(TAG, "tsMs=${System.currentTimeMillis()} milestone=video frame dropped reason=dimension mismatch frame=${frame.width}x${frame.height} encoder=${configuredWidth}x${configuredHeight}")
                 return
             }
         }
@@ -128,12 +130,13 @@ object VideoEncoderNode {
                 inputBuffer.put(frame.i420Data)
                 val presentationTimeUs = frame.timestampNs / 1_000L
                 activeCodec.queueInputBuffer(inputIndex, 0, frame.i420Data.size, presentationTimeUs, 0)
+                Log.d(TAG, "tsMs=${System.currentTimeMillis()} milestone=video input accepted ptsUs=$presentationTimeUs")
                 framesQueuedIn += 1
                 StreamPipelineMetrics.recordEncoderQueueIn()
             } else {
                 framesDroppedNoInputBuffer += 1
                 if (noInputBufferLogs < 5 || framesDroppedNoInputBuffer % 120L == 0L) {
-                    Log.w(TAG, "encoder-input-unavailable index=$inputIndex droppedNoInput=$framesDroppedNoInputBuffer")
+                    Log.w(TAG, "tsMs=${System.currentTimeMillis()} milestone=video frame dropped reason=input buffer unavailable index=$inputIndex droppedNoInput=$framesDroppedNoInputBuffer")
                     noInputBufferLogs += 1
                 }
             }
@@ -198,6 +201,10 @@ object VideoEncoderNode {
                 MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> emitCodecConfig(activeCodec.outputFormat)
                 else -> {
                     if (outputIndex >= 0) {
+                        Log.d(
+                            TAG,
+                            "tsMs=${System.currentTimeMillis()} milestone=video output buffer dequeued index=$outputIndex size=${bufferInfo.size} flags=${bufferInfo.flags} ptsUs=${bufferInfo.presentationTimeUs}",
+                        )
                         val outputBuffer = activeCodec.getOutputBuffer(outputIndex)
                         if (outputBuffer != null && bufferInfo.size > 0) {
                             val accessUnit = ByteArray(bufferInfo.size)
@@ -206,6 +213,7 @@ object VideoEncoderNode {
                             outputBuffer.get(accessUnit)
 
                             if ((bufferInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG) != 0) {
+                                Log.i(TAG, "tsMs=${System.currentTimeMillis()} milestone=video codec config received")
                                 activeCodec.releaseOutputBuffer(outputIndex, false)
                                 continue
                             }
@@ -222,6 +230,10 @@ object VideoEncoderNode {
                                 normalizedAccessUnit
                             }
 
+                            Log.i(
+                                TAG,
+                                "tsMs=${System.currentTimeMillis()} milestone=video access unit accepted size=${accessUnitWithConfig.size} ptsUs=${bufferInfo.presentationTimeUs}",
+                            )
                             outputListener?.invoke(
                                 EncodedAccessUnit(
                                     data = accessUnitWithConfig,
@@ -244,7 +256,7 @@ object VideoEncoderNode {
                             if (containsPps) ppsSeen = true
                             if (containsIdr && !firstIdrSeen) {
                                 firstIdrSeen = true
-                                Log.i(TAG, "tsMs=${System.currentTimeMillis()} milestone=keyframe detected frame=$encodedAccessUnitCount ptsUs=${bufferInfo.presentationTimeUs} bytes=${accessUnitWithConfig.size} spsSeen=$spsSeen ppsSeen=$ppsSeen")
+                                Log.i(TAG, "tsMs=${System.currentTimeMillis()} milestone=first video keyframe received size=${accessUnitWithConfig.size} ptsUs=${bufferInfo.presentationTimeUs}")
                             }
                             if (shouldLogEncodedAuEvent(encodedAccessUnitCount)) {
                                 Log.d(
@@ -271,7 +283,7 @@ object VideoEncoderNode {
     private fun emitCodecConfig(format: MediaFormat) {
         val csd0 = format.getByteBuffer("csd-0")
         val csd1 = format.getByteBuffer("csd-1")
-        Log.i(TAG, "tsMs=${System.currentTimeMillis()} milestone=output format received mime=${format.getString(MediaFormat.KEY_MIME)} hasCsd0=${csd0 != null} hasCsd1=${csd1 != null}")
+        Log.i(TAG, "tsMs=${System.currentTimeMillis()} milestone=video codec config received mime=${format.getString(MediaFormat.KEY_MIME)} hasCsd0=${csd0 != null} hasCsd1=${csd1 != null}")
         val configPayload = mergeAnnexB(csd0, csd1)
         if (configPayload.isEmpty()) {
             return

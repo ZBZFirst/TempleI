@@ -186,7 +186,7 @@ object ExportFeature {
     }
 
     fun startStream(config: ObsStreamConfig): StreamResult {
-        Log.i(STREAM_TAG, "tsMs=${System.currentTimeMillis()} milestone=startStream pressed state=$sessionState")
+        Log.i(STREAM_TAG, "tsMs=${System.currentTimeMillis()} milestone=startStream begin state=$sessionState")
         if (sessionState == SessionState.Streaming || sessionState == SessionState.Starting) {
             return StreamResult(state = sessionState)
         }
@@ -199,6 +199,7 @@ object ExportFeature {
         }
 
         sessionState = SessionState.Starting
+        Log.i(STREAM_TAG, "tsMs=${System.currentTimeMillis()} milestone=encoders starting")
         Log.i(STREAM_TAG, "tsMs=${System.currentTimeMillis()} milestone=pipeline initialized mode=${config.streamMode}")
         StreamPipelineMetrics.reset()
         NativeStreamBackends.resetIngressRuntimeStats()

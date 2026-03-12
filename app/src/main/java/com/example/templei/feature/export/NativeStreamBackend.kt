@@ -231,6 +231,7 @@ private object FfmpegStreamBackend : NativeStreamBackend {
     private var lastStatsSnapshot: String = "stats unavailable"
     private var lastRetryAttempts: Int = 0
     private var terminalFailureCount: Int = 0
+    private var firstMediaWriteAttemptLogged = false
 
     override val id: NativeStreamBackend.BackendId = NativeStreamBackend.BackendId.Ffmpeg
 
@@ -298,6 +299,7 @@ private object FfmpegStreamBackend : NativeStreamBackend {
             return prepareResult
         }
 
+        firstMediaWriteAttemptLogged = false
         var attempt = 0
         var startFailure: Throwable? = null
         while (attempt < MAX_CONNECT_RETRIES) {
@@ -338,10 +340,16 @@ private object FfmpegStreamBackend : NativeStreamBackend {
             return Result.failure(runtimeResult.exceptionOrNull() ?: IllegalStateException("ffmpeg runtime unavailable"))
         }
 
+        if (!firstMediaWriteAttemptLogged) {
+            Log.i(STREAM_TAG, "tsMs=${System.currentTimeMillis()} milestone=first-media-write-attempt")
+            firstMediaWriteAttemptLogged = true
+        }
+        Log.i(MUX_TAG, "tsMs=${System.currentTimeMillis()} milestone=video write requested size=${accessUnit.data.size} ptsUs=${accessUnit.presentationTimeUs}")
         val pushResult = runtimeResult.getOrThrow().pushVideo(accessUnit)
+        Log.i(MUX_TAG, "tsMs=${System.currentTimeMillis()} milestone=video write result rc=${if (pushResult.isSuccess) 0 else -1}")
         if (pushResult.isFailure) {
             lastError = pushResult.exceptionOrNull()?.message.orEmpty()
-            Log.e(ERROR_TAG, "tsMs=${System.currentTimeMillis()} packet write failure type=video reason=$lastError")
+            Log.e(ERROR_TAG, "tsMs=${System.currentTimeMillis()} milestone=video write skipped reason=$lastError")
         }
         lastStatsSnapshot = runtimeResult.getOrThrow().statsSnapshot()
         return pushResult
@@ -357,10 +365,16 @@ private object FfmpegStreamBackend : NativeStreamBackend {
             return Result.failure(runtimeResult.exceptionOrNull() ?: IllegalStateException("ffmpeg runtime unavailable"))
         }
 
+        if (!firstMediaWriteAttemptLogged) {
+            Log.i(STREAM_TAG, "tsMs=${System.currentTimeMillis()} milestone=first-media-write-attempt")
+            firstMediaWriteAttemptLogged = true
+        }
+        Log.i(MUX_TAG, "tsMs=${System.currentTimeMillis()} milestone=audio write requested size=${accessUnit.data.size} ptsUs=${accessUnit.presentationTimeUs}")
         val pushResult = runtimeResult.getOrThrow().pushAudio(accessUnit)
+        Log.i(MUX_TAG, "tsMs=${System.currentTimeMillis()} milestone=audio write result rc=${if (pushResult.isSuccess) 0 else -1}")
         if (pushResult.isFailure) {
             lastError = pushResult.exceptionOrNull()?.message.orEmpty()
-            Log.e(ERROR_TAG, "tsMs=${System.currentTimeMillis()} packet write failure type=audio reason=$lastError")
+            Log.e(ERROR_TAG, "tsMs=${System.currentTimeMillis()} milestone=audio write skipped reason=$lastError")
         }
         lastStatsSnapshot = runtimeResult.getOrThrow().statsSnapshot()
         return pushResult
@@ -375,6 +389,7 @@ private object FfmpegStreamBackend : NativeStreamBackend {
         audioEnabled = false
         lastStatsSnapshot = runtimeInstance?.statsSnapshot() ?: "stats unavailable"
         lastRetryAttempts = 0
+        firstMediaWriteAttemptLogged = false
         return Result.success(Unit)
     }
 
