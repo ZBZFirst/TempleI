@@ -88,17 +88,11 @@ PKG_CONFIG_BIN="$(resolve_required_tool pkg-config pkgconf)" || {
   exit 1
 }
 
-if [[ "$HOST_TAG" == "windows-x86_64" ]]; then
-  MAKE_BIN="$(resolve_required_tool mingw32-make make)" || {
-    echo "Missing required build tool: mingw32-make (or make)"
-    exit 1
-  }
-else
-  MAKE_BIN="$(resolve_required_tool make)" || {
-    echo "Missing required build tool: make"
-    exit 1
-  }
-fi
+# Prefer MSYS make because it understands /c/... POSIX paths.
+MAKE_BIN="$(resolve_required_tool make mingw32-make)" || {
+  echo "Missing required build tool: make"
+  exit 1
+}
 
 echo "Resolved git: $GIT_BIN"
 echo "Resolved pkg-config: $PKG_CONFIG_BIN"
@@ -184,10 +178,6 @@ rm -f \
   "$FFMPEG_SRC_DIR/config.asm" \
   "$FFMPEG_SRC_DIR/config.log" \
   "$FFMPEG_SRC_DIR/config_components.h" \
-  "$FFMPEG_SRC_DIR/Makefile"
-
-rm -rf \
-  "$FFMPEG_SRC_DIR/ffbuild"
 
 unset TMPDIR
 export TMP="$TMP_WIN_DIR"
