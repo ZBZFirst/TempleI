@@ -35,6 +35,12 @@ import java.util.concurrent.Executors
  */
 object CameraFeature {
     private const val TAG = "TempleI-CameraFeature"
+    private enum class BindMode {
+        None,
+        Preview,
+        Stream,
+    }
+
     enum class LensOption {
         BACK,
         FRONT,
@@ -62,6 +68,7 @@ object CameraFeature {
     private var isBound = false
     private var isRecording = false
     private var frameOutputListener: ((FramePacket) -> Unit)? = null
+    private var bindMode: BindMode = BindMode.None
 
     private val analysisExecutor = Executors.newSingleThreadExecutor()
     private var unexpectedAnalysisFrameCount = 0L
@@ -76,6 +83,10 @@ object CameraFeature {
 
     fun setFrameOutputListener(listener: ((FramePacket) -> Unit)?) {
         frameOutputListener = listener
+        Log.i(
+            TAG,
+            "tsMs=${System.currentTimeMillis()} milestone=frame-listener listener=${if (listener == null) "detached" else "attached"} bindMode=$bindMode",
+        )
     }
 
     fun hasCamera(context: Context, option: LensOption = selectedLensOption): Boolean {
@@ -97,6 +108,7 @@ object CameraFeature {
 
         if (!provider.hasCamera(selectedLensOption.toSelector())) {
             isBound = false
+            bindMode = BindMode.None
             unexpectedAnalysisFrameCount = 0
             analysisFrameWidth = 0
             analysisFrameHeight = 0
@@ -104,10 +116,21 @@ object CameraFeature {
             return
         }
 
-        if (isBound) {
+        if (isBound && bindMode == BindMode.Preview) {
             previewUseCase?.setSurfaceProvider(previewView.surfaceProvider)
+            Log.i(
+                TAG,
+                "tsMs=${System.currentTimeMillis()} milestone=bind skipped mode=preview reason=already-bound composition=preview+imageCapture+videoCapture+imageAnalysis",
+            )
             onStarted()
             return
+        }
+
+        if (isBound && bindMode != BindMode.Preview) {
+            Log.i(
+                TAG,
+                "tsMs=${System.currentTimeMillis()} milestone=rebind required targetMode=preview previousMode=$bindMode",
+            )
         }
 
         val preview = Preview.Builder().build().also {
@@ -130,6 +153,10 @@ object CameraFeature {
             }
 
         provider.unbindAll()
+        Log.i(
+            TAG,
+            "tsMs=${System.currentTimeMillis()} milestone=unbind all reason=bind-preview",
+        )
         unexpectedAnalysisFrameCount = 0
         analysisFrameWidth = 0
         analysisFrameHeight = 0
@@ -147,6 +174,11 @@ object CameraFeature {
         videoCapture = videoCaptureUseCase
         imageAnalysis = imageAnalysisUseCase
         isBound = true
+        bindMode = BindMode.Preview
+        Log.i(
+            TAG,
+            "tsMs=${System.currentTimeMillis()} milestone=bind success mode=preview composition=preview+imageCapture+videoCapture+imageAnalysis expected=${STREAM_ANALYSIS_EXPECTED_WIDTH}x${STREAM_ANALYSIS_EXPECTED_HEIGHT}",
+        )
         onStarted()
     }
 
@@ -165,12 +197,24 @@ object CameraFeature {
 
         if (!provider.hasCamera(selectedLensOption.toSelector())) {
             isBound = false
+            bindMode = BindMode.None
             onUnavailable()
             return false
         }
 
-        if (isBound) {
+        if (isBound && bindMode == BindMode.Stream) {
+            Log.i(
+                TAG,
+                "tsMs=${System.currentTimeMillis()} milestone=bind skipped mode=stream reason=already-bound composition=imageAnalysis",
+            )
             return true
+        }
+
+        if (isBound && bindMode != BindMode.Stream) {
+            Log.i(
+                TAG,
+                "tsMs=${System.currentTimeMillis()} milestone=rebind required targetMode=stream previousMode=$bindMode",
+            )
         }
 
         val imageAnalysisUseCase = ImageAnalysis.Builder()
@@ -185,6 +229,10 @@ object CameraFeature {
             }
 
         provider.unbindAll()
+        Log.i(
+            TAG,
+            "tsMs=${System.currentTimeMillis()} milestone=unbind all reason=bind-stream",
+        )
         unexpectedAnalysisFrameCount = 0
         analysisFrameWidth = 0
         analysisFrameHeight = 0
@@ -199,7 +247,32 @@ object CameraFeature {
         videoCapture = null
         imageAnalysis = imageAnalysisUseCase
         isBound = true
+        bindMode = BindMode.Stream
+        Log.i(
+            TAG,
+            "tsMs=${System.currentTimeMillis()} milestone=bind success mode=stream composition=imageAnalysis expected=${STREAM_ANALYSIS_EXPECTED_WIDTH}x${STREAM_ANALYSIS_EXPECTED_HEIGHT}",
+        )
         return true
+    }
+
+    fun stopStreamCapturePipeline() {
+        if (!isBound || bindMode != BindMode.Stream) {
+            return
+        }
+        cameraProvider?.unbindAll()
+        previewUseCase = null
+        imageCapture = null
+        videoCapture = null
+        imageAnalysis = null
+        isBound = false
+        bindMode = BindMode.None
+        unexpectedAnalysisFrameCount = 0
+        analysisFrameWidth = 0
+        analysisFrameHeight = 0
+        Log.i(
+            TAG,
+            "tsMs=${System.currentTimeMillis()} milestone=unbind all reason=stop-stream-pipeline",
+        )
     }
 
     fun stopPreview() {
@@ -210,9 +283,14 @@ object CameraFeature {
         videoCapture = null
         imageAnalysis = null
         isBound = false
+        bindMode = BindMode.None
         unexpectedAnalysisFrameCount = 0
         analysisFrameWidth = 0
         analysisFrameHeight = 0
+        Log.i(
+            TAG,
+            "tsMs=${System.currentTimeMillis()} milestone=unbind all reason=stop-preview",
+        )
     }
 
     fun takePicture(
