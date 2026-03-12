@@ -173,9 +173,6 @@ object CameraFeature {
             return true
         }
 
-        val imageCaptureUseCase = ImageCapture.Builder().build()
-        val recorder = Recorder.Builder().setQualitySelector(QualitySelector.from(Quality.HD)).build()
-        val videoCaptureUseCase = VideoCapture.withOutput(recorder)
         val imageAnalysisUseCase = ImageAnalysis.Builder()
             // Keep analyzer frames aligned with current encoder profile expectation (1280x720).
             .setTargetResolution(Size(1280, 720))
@@ -194,14 +191,12 @@ object CameraFeature {
         provider.bindToLifecycle(
             CameraSessionLifecycleOwner,
             selectedLensOption.toSelector(),
-            imageCaptureUseCase,
-            videoCaptureUseCase,
             imageAnalysisUseCase,
         )
 
         previewUseCase = null
-        imageCapture = imageCaptureUseCase
-        videoCapture = videoCaptureUseCase
+        imageCapture = null
+        videoCapture = null
         imageAnalysis = imageAnalysisUseCase
         isBound = true
         return true
@@ -335,10 +330,14 @@ object CameraFeature {
     fun isVideoRecording(): Boolean = isRecording
 
     private fun handleAnalysisFrame(imageProxy: ImageProxy) {
+        val timestampNs = imageProxy.imageInfo.timestamp
         try {
             if (imageProxy.format != ImageFormat.YUV_420_888) {
+                Log.w(TAG, "tsMs=${System.currentTimeMillis()} milestone=video frame dropped reason=analysis format=${imageProxy.format}")
                 return
             }
+
+            Log.d(TAG, "tsMs=${System.currentTimeMillis()} milestone=analysis frame received size=${imageProxy.width}x${imageProxy.height} ts=$timestampNs")
 
             if (analysisFrameWidth != imageProxy.width || analysisFrameHeight != imageProxy.height) {
                 analysisFrameWidth = imageProxy.width
@@ -350,8 +349,14 @@ object CameraFeature {
                 )
             }
 
-            val listener = frameOutputListener ?: return
-            val i420 = imageProxy.toI420ByteArray() ?: return
+            val listener = frameOutputListener ?: run {
+                Log.w(TAG, "tsMs=${System.currentTimeMillis()} milestone=video frame dropped reason=frame listener missing")
+                return
+            }
+            val i420 = imageProxy.toI420ByteArray() ?: run {
+                Log.w(TAG, "tsMs=${System.currentTimeMillis()} milestone=video frame dropped reason=i420 conversion failed")
+                return
+            }
             listener(
                 FramePacket(
                     width = imageProxy.width,
@@ -364,6 +369,7 @@ object CameraFeature {
             Log.e(TAG, "analysis frame handling failed: ${throwable.message.orEmpty()}", throwable)
         } finally {
             imageProxy.close()
+            Log.d(TAG, "tsMs=${System.currentTimeMillis()} milestone=analysis frame closed ts=$timestampNs")
         }
     }
 

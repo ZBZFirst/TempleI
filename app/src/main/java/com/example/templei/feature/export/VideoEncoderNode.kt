@@ -107,6 +107,7 @@ object VideoEncoderNode {
 
     fun queueFrame(frame: CameraFeature.FramePacket) {
         if (nodeState != NodeState.Running) {
+            Log.w(TAG, "tsMs=${System.currentTimeMillis()} milestone=video frame dropped reason=encoder not running state=$nodeState")
             return
         }
 
@@ -115,7 +116,7 @@ object VideoEncoderNode {
         if (frame.width != configuredWidth || frame.height != configuredHeight) {
             val reconfigure = restartForResolution(frame.width, frame.height)
             if (reconfigure.isFailure) {
-                Log.w(TAG, "drop frame due to dimension mismatch frame=${frame.width}x${frame.height} encoder=${configuredWidth}x${configuredHeight}")
+                Log.w(TAG, "tsMs=${System.currentTimeMillis()} milestone=video frame dropped reason=dimension mismatch frame=${frame.width}x${frame.height} encoder=${configuredWidth}x${configuredHeight}")
                 return
             }
         }
@@ -129,12 +130,13 @@ object VideoEncoderNode {
                 inputBuffer.put(frame.i420Data)
                 val presentationTimeUs = frame.timestampNs / 1_000L
                 activeCodec.queueInputBuffer(inputIndex, 0, frame.i420Data.size, presentationTimeUs, 0)
+                Log.d(TAG, "tsMs=${System.currentTimeMillis()} milestone=video input accepted ptsUs=$presentationTimeUs")
                 framesQueuedIn += 1
                 StreamPipelineMetrics.recordEncoderQueueIn()
             } else {
                 framesDroppedNoInputBuffer += 1
                 if (noInputBufferLogs < 5 || framesDroppedNoInputBuffer % 120L == 0L) {
-                    Log.w(TAG, "encoder-input-unavailable index=$inputIndex droppedNoInput=$framesDroppedNoInputBuffer")
+                    Log.w(TAG, "tsMs=${System.currentTimeMillis()} milestone=video frame dropped reason=input buffer unavailable index=$inputIndex droppedNoInput=$framesDroppedNoInputBuffer")
                     noInputBufferLogs += 1
                 }
             }
