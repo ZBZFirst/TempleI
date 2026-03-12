@@ -213,9 +213,9 @@ object AudioEncoderNode {
                             if ((bufferInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG) == 0) {
                                 val adtsPayload = addAdtsHeader(payload, audioConfig)
                                 if (firstOutputLogs < 5) {
-                                    Log.i(
+                                    Log.d(
                                         TAG,
-                                        "aac-buffer[${firstOutputLogs + 1}] size=${bufferInfo.size} flags=${bufferInfo.flags} " +
+                                        "tsMs=${System.currentTimeMillis()} milestone=encoded frame size frame=${encodedAccessUnitCount + 1} bytes=${bufferInfo.size} flags=${bufferInfo.flags} " +
                                             "codecConfig=false first16=${toHex(payload, 16)}",
                                     )
                                     firstOutputLogs += 1
@@ -231,20 +231,20 @@ object AudioEncoderNode {
                                 encodedAccessUnitCount += 1
                                 lastAudioPresentationTimeUs = bufferInfo.presentationTimeUs
                                 if (shouldLogEncodedAuEvent(encodedAccessUnitCount)) {
-                                    Log.i(
+                                    Log.d(
                                         TAG,
-                                        "audio-au-summary encodedAu=$encodedAccessUnitCount codecConfigEvents=$codecConfigEventCount lastPtsUs=$lastAudioPresentationTimeUs",
+                                        "tsMs=${System.currentTimeMillis()} audio-au-summary frame=$encodedAccessUnitCount codecConfigEvents=$codecConfigEventCount lastPtsUs=$lastAudioPresentationTimeUs",
                                     )
                                 }
                             } else {
                                 codecConfigEventCount += 1
                                 if (shouldLogEncodedAuEvent(codecConfigEventCount)) {
-                                    Log.i(TAG, "audio-codec-config-events count=$codecConfigEventCount")
+                                    Log.d(TAG, "tsMs=${System.currentTimeMillis()} audio-codec-config-events count=$codecConfigEventCount")
                                 }
                                 if (firstOutputLogs < 5) {
-                                    Log.i(
+                                    Log.d(
                                         TAG,
-                                        "aac-buffer[${firstOutputLogs + 1}] size=${bufferInfo.size} flags=${bufferInfo.flags} " +
+                                        "tsMs=${System.currentTimeMillis()} milestone=AAC config received event=${codecConfigEventCount} bytes=${bufferInfo.size} flags=${bufferInfo.flags} " +
                                             "codecConfig=true first16=${toHex(payload, 16)}",
                                     )
                                     firstOutputLogs += 1
@@ -277,7 +277,7 @@ object AudioEncoderNode {
         ).also {
             Log.i(
                 TAG,
-                "aac-csd profile=${it.profile} sampleRateIndex=${it.sampleRateIndex} channelConfig=${it.channelConfig}",
+                "tsMs=${System.currentTimeMillis()} milestone=AAC config received profile=${it.profile} sampleRateIndex=${it.sampleRateIndex} channelConfig=${it.channelConfig}",
             )
         }
     }
@@ -298,9 +298,9 @@ object AudioEncoderNode {
         header[6] = 0xFC.toByte()
 
         if (firstAdtsLogs < 5) {
-            Log.i(
+            Log.d(
                 TAG,
-                "adts[${firstAdtsLogs + 1}] profile=${profile + 1} freqIdx=$freqIdx chanCfg=$chanCfg frameLen=$frameLength " +
+                "tsMs=${System.currentTimeMillis()} adts[${firstAdtsLogs + 1}] profile=${profile + 1} freqIdx=$freqIdx chanCfg=$chanCfg frameLen=$frameLength " +
                     "header=${toHex(header, 7)} payload16=${toHex(payload, 16)}",
             )
             firstAdtsLogs += 1

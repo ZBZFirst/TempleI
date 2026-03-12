@@ -1,5 +1,7 @@
 package com.example.templei.feature.export
 
+import android.util.Log
+
 /**
  * JNI bridge for PR E FFmpeg runtime cutover readiness.
  *
@@ -7,6 +9,13 @@ package com.example.templei.feature.export
  * mux/send implementation is still iterative.
  */
 object FfmpegNativeBridge {
+    private const val TAG = "TempleI-SRT"
+
+    init {
+        System.loadLibrary("templei-native")
+        Log.d(TAG, "TempleI-SRT native library loaded")
+    }
+
     external fun nativeProbeRuntime(): Boolean
 
     external fun nativePrepare(
