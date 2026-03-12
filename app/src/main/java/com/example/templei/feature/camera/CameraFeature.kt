@@ -74,6 +74,7 @@ object CameraFeature {
     private var unexpectedAnalysisFrameCount = 0L
     private var analysisFrameWidth = 0
     private var analysisFrameHeight = 0
+    private var analysisFirstFrameLogged = false
 
     fun selectedLens(): LensOption = selectedLensOption
 
@@ -112,6 +113,7 @@ object CameraFeature {
             unexpectedAnalysisFrameCount = 0
             analysisFrameWidth = 0
             analysisFrameHeight = 0
+            analysisFirstFrameLogged = false
             onUnavailable()
             return
         }
@@ -146,11 +148,7 @@ object CameraFeature {
             .setTargetResolution(Size(1280, 720))
             .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
             .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888)
-            .build().also { analysis ->
-                analysis.setAnalyzer(analysisExecutor) { imageProxy ->
-                    handleAnalysisFrame(imageProxy)
-                }
-            }
+            .build()
 
         provider.unbindAll()
         Log.i(
@@ -160,6 +158,7 @@ object CameraFeature {
         unexpectedAnalysisFrameCount = 0
         analysisFrameWidth = 0
         analysisFrameHeight = 0
+        analysisFirstFrameLogged = false
         provider.bindToLifecycle(
             CameraSessionLifecycleOwner,
             selectedLensOption.toSelector(),
@@ -167,6 +166,13 @@ object CameraFeature {
             imageCaptureUseCase,
             videoCaptureUseCase,
             imageAnalysisUseCase,
+        )
+        imageAnalysisUseCase.setAnalyzer(analysisExecutor) { imageProxy ->
+            handleAnalysisFrame(imageProxy)
+        }
+        Log.i(
+            TAG,
+            "tsMs=${System.currentTimeMillis()} milestone=analysis-analyzer-registered mode=preview",
         )
 
         previewUseCase = preview
@@ -191,6 +197,7 @@ object CameraFeature {
         }.getOrElse { error ->
             Log.e(TAG, "capture pipeline init failed: ${error.message.orEmpty()}", error)
             isBound = false
+            analysisFirstFrameLogged = false
             onUnavailable()
             return false
         }
@@ -198,6 +205,7 @@ object CameraFeature {
         if (!provider.hasCamera(selectedLensOption.toSelector())) {
             isBound = false
             bindMode = BindMode.None
+            analysisFirstFrameLogged = false
             onUnavailable()
             return false
         }
@@ -222,11 +230,7 @@ object CameraFeature {
             .setTargetResolution(Size(1280, 720))
             .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
             .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888)
-            .build().also { analysis ->
-                analysis.setAnalyzer(analysisExecutor) { imageProxy ->
-                    handleAnalysisFrame(imageProxy)
-                }
-            }
+            .build()
 
         provider.unbindAll()
         Log.i(
@@ -236,10 +240,18 @@ object CameraFeature {
         unexpectedAnalysisFrameCount = 0
         analysisFrameWidth = 0
         analysisFrameHeight = 0
+        analysisFirstFrameLogged = false
         provider.bindToLifecycle(
             CameraSessionLifecycleOwner,
             selectedLensOption.toSelector(),
             imageAnalysisUseCase,
+        )
+        imageAnalysisUseCase.setAnalyzer(analysisExecutor) { imageProxy ->
+            handleAnalysisFrame(imageProxy)
+        }
+        Log.i(
+            TAG,
+            "tsMs=${System.currentTimeMillis()} milestone=analysis-analyzer-registered mode=stream",
         )
 
         previewUseCase = null
@@ -269,6 +281,7 @@ object CameraFeature {
         unexpectedAnalysisFrameCount = 0
         analysisFrameWidth = 0
         analysisFrameHeight = 0
+        analysisFirstFrameLogged = false
         Log.i(
             TAG,
             "tsMs=${System.currentTimeMillis()} milestone=unbind all reason=stop-stream-pipeline",
@@ -287,6 +300,7 @@ object CameraFeature {
         unexpectedAnalysisFrameCount = 0
         analysisFrameWidth = 0
         analysisFrameHeight = 0
+        analysisFirstFrameLogged = false
         Log.i(
             TAG,
             "tsMs=${System.currentTimeMillis()} milestone=unbind all reason=stop-preview",
@@ -416,6 +430,13 @@ object CameraFeature {
             }
 
             Log.d(TAG, "tsMs=${System.currentTimeMillis()} milestone=analysis frame received size=${imageProxy.width}x${imageProxy.height} ts=$timestampNs")
+            if (!analysisFirstFrameLogged) {
+                analysisFirstFrameLogged = true
+                Log.i(
+                    TAG,
+                    "tsMs=${System.currentTimeMillis()} milestone=analysis-first-frame size=${imageProxy.width}x${imageProxy.height} ts=$timestampNs",
+                )
+            }
 
             if (analysisFrameWidth != imageProxy.width || analysisFrameHeight != imageProxy.height) {
                 analysisFrameWidth = imageProxy.width
@@ -442,6 +463,10 @@ object CameraFeature {
                     timestampNs = imageProxy.imageInfo.timestamp,
                     i420Data = i420,
                 ),
+            )
+            Log.d(
+                TAG,
+                "tsMs=${System.currentTimeMillis()} milestone=analysis-frame-delivered size=${imageProxy.width}x${imageProxy.height} ts=$timestampNs",
             )
         } catch (throwable: Throwable) {
             Log.e(TAG, "analysis frame handling failed: ${throwable.message.orEmpty()}", throwable)
