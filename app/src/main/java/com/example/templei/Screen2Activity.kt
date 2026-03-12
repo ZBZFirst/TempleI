@@ -45,6 +45,10 @@ class Screen2Activity : ComponentActivity() {
     private lateinit var startupProgressText: TextView
     private lateinit var toggleStreamPathButton: Button
     private lateinit var startStreamButton: Button
+    private lateinit var editHostButton: Button
+    private lateinit var editPortButton: Button
+    private lateinit var validateEndpointButton: Button
+    private lateinit var resetPresetButton: Button
     private lateinit var copyDiagnosticsButton: Button
 
     private var currentConfig = ExportFeature.ObsStreamConfig()
@@ -101,17 +105,21 @@ class Screen2Activity : ComponentActivity() {
         startupProgressText = findViewById(R.id.startupProgressText)
         toggleStreamPathButton = findViewById(R.id.setupFailureDomainsButton)
         startStreamButton = findViewById(R.id.setupContractsButton)
+        editHostButton = findViewById(R.id.defineEndpointButton)
+        editPortButton = findViewById(R.id.defineTransportButton)
+        validateEndpointButton = findViewById(R.id.defineMuxingButton)
+        resetPresetButton = findViewById(R.id.defineRecoveryButton)
         copyDiagnosticsButton = findViewById(R.id.copyDiagnosticsButton)
     }
 
     private fun bindButtons() {
-        findViewById<Button>(R.id.defineEndpointButton).setOnClickListener {
+        editHostButton.setOnClickListener {
             promptForHost()
         }
-        findViewById<Button>(R.id.defineTransportButton).setOnClickListener {
+        editPortButton.setOnClickListener {
             promptForPort()
         }
-        findViewById<Button>(R.id.defineMuxingButton).setOnClickListener {
+        validateEndpointButton.setOnClickListener {
             if (currentConfig.host.isBlank()) {
                 promptForHost()
                 return@setOnClickListener
@@ -127,7 +135,7 @@ class Screen2Activity : ComponentActivity() {
             }
             renderStatus()
         }
-        findViewById<Button>(R.id.defineRecoveryButton).setOnClickListener {
+        resetPresetButton.setOnClickListener {
             currentConfig = ExportFeature.resetConfig(this)
             renderStatus()
         }
@@ -294,6 +302,15 @@ class Screen2Activity : ComponentActivity() {
         startStreamButton.isEnabled = !isStartInFlight &&
             currentState != ExportFeature.SessionState.Starting &&
             currentState != ExportFeature.SessionState.Streaming
+
+        val configEditable = currentState != ExportFeature.SessionState.Starting &&
+            currentState != ExportFeature.SessionState.Streaming &&
+            currentState != ExportFeature.SessionState.Stopping
+        editHostButton.isEnabled = configEditable
+        editPortButton.isEnabled = configEditable
+        validateEndpointButton.isEnabled = configEditable
+        resetPresetButton.isEnabled = configEditable
+        toggleStreamPathButton.isEnabled = configEditable
         validationResultText.text = getString(R.string.obs_validation_value, validationMessage)
         connectionResultText.text = getString(R.string.obs_connection_value, connectionMessage)
         lastErrorText.text = getString(R.string.obs_last_error_value, errorText)
