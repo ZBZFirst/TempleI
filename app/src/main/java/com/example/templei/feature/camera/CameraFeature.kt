@@ -35,6 +35,12 @@ import java.util.concurrent.Executors
  */
 object CameraFeature {
     private const val TAG = "TempleI-CameraFeature"
+    private enum class BindMode {
+        None,
+        Preview,
+        Stream,
+    }
+
     enum class LensOption {
         BACK,
         FRONT,
@@ -62,11 +68,13 @@ object CameraFeature {
     private var isBound = false
     private var isRecording = false
     private var frameOutputListener: ((FramePacket) -> Unit)? = null
+    private var bindMode: BindMode = BindMode.None
 
     private val analysisExecutor = Executors.newSingleThreadExecutor()
     private var unexpectedAnalysisFrameCount = 0L
     private var analysisFrameWidth = 0
     private var analysisFrameHeight = 0
+    private var analysisFirstFrameLogged = false
 
     fun selectedLens(): LensOption = selectedLensOption
 
@@ -76,6 +84,10 @@ object CameraFeature {
 
     fun setFrameOutputListener(listener: ((FramePacket) -> Unit)?) {
         frameOutputListener = listener
+        Log.i(
+            TAG,
+            "tsMs=${System.currentTimeMillis()} milestone=frame-listener listener=${if (listener == null) "detached" else "attached"} bindMode=$bindMode",
+        )
     }
 
     fun hasCamera(context: Context, option: LensOption = selectedLensOption): Boolean {
@@ -97,17 +109,30 @@ object CameraFeature {
 
         if (!provider.hasCamera(selectedLensOption.toSelector())) {
             isBound = false
+            bindMode = BindMode.None
             unexpectedAnalysisFrameCount = 0
             analysisFrameWidth = 0
             analysisFrameHeight = 0
+            analysisFirstFrameLogged = false
             onUnavailable()
             return
         }
 
-        if (isBound) {
+        if (isBound && bindMode == BindMode.Preview) {
             previewUseCase?.setSurfaceProvider(previewView.surfaceProvider)
+            Log.i(
+                TAG,
+                "tsMs=${System.currentTimeMillis()} milestone=bind skipped mode=preview reason=already-bound composition=preview+imageCapture+videoCapture+imageAnalysis",
+            )
             onStarted()
             return
+        }
+
+        if (isBound && bindMode != BindMode.Preview) {
+            Log.i(
+                TAG,
+                "tsMs=${System.currentTimeMillis()} milestone=rebind required targetMode=preview previousMode=$bindMode",
+            )
         }
 
         val preview = Preview.Builder().build().also {
@@ -123,16 +148,17 @@ object CameraFeature {
             .setTargetResolution(Size(1280, 720))
             .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
             .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888)
-            .build().also { analysis ->
-                analysis.setAnalyzer(analysisExecutor) { imageProxy ->
-                    handleAnalysisFrame(imageProxy)
-                }
-            }
+            .build()
 
         provider.unbindAll()
+        Log.i(
+            TAG,
+            "tsMs=${System.currentTimeMillis()} milestone=unbind all reason=bind-preview",
+        )
         unexpectedAnalysisFrameCount = 0
         analysisFrameWidth = 0
         analysisFrameHeight = 0
+        analysisFirstFrameLogged = false
         provider.bindToLifecycle(
             CameraSessionLifecycleOwner,
             selectedLensOption.toSelector(),
@@ -141,12 +167,24 @@ object CameraFeature {
             videoCaptureUseCase,
             imageAnalysisUseCase,
         )
+        imageAnalysisUseCase.setAnalyzer(analysisExecutor) { imageProxy ->
+            handleAnalysisFrame(imageProxy)
+        }
+        Log.i(
+            TAG,
+            "tsMs=${System.currentTimeMillis()} milestone=analysis-analyzer-registered mode=preview",
+        )
 
         previewUseCase = preview
         imageCapture = imageCaptureUseCase
         videoCapture = videoCaptureUseCase
         imageAnalysis = imageAnalysisUseCase
         isBound = true
+        bindMode = BindMode.Preview
+        Log.i(
+            TAG,
+            "tsMs=${System.currentTimeMillis()} milestone=bind success mode=preview composition=preview+imageCapture+videoCapture+imageAnalysis expected=${STREAM_ANALYSIS_EXPECTED_WIDTH}x${STREAM_ANALYSIS_EXPECTED_HEIGHT}",
+        )
         onStarted()
     }
 
@@ -159,18 +197,32 @@ object CameraFeature {
         }.getOrElse { error ->
             Log.e(TAG, "capture pipeline init failed: ${error.message.orEmpty()}", error)
             isBound = false
+            analysisFirstFrameLogged = false
             onUnavailable()
             return false
         }
 
         if (!provider.hasCamera(selectedLensOption.toSelector())) {
             isBound = false
+            bindMode = BindMode.None
+            analysisFirstFrameLogged = false
             onUnavailable()
             return false
         }
 
-        if (isBound) {
+        if (isBound && bindMode == BindMode.Stream) {
+            Log.i(
+                TAG,
+                "tsMs=${System.currentTimeMillis()} milestone=bind skipped mode=stream reason=already-bound composition=imageAnalysis",
+            )
             return true
+        }
+
+        if (isBound && bindMode != BindMode.Stream) {
+            Log.i(
+                TAG,
+                "tsMs=${System.currentTimeMillis()} milestone=rebind required targetMode=stream previousMode=$bindMode",
+            )
         }
 
         val imageAnalysisUseCase = ImageAnalysis.Builder()
@@ -178,20 +230,28 @@ object CameraFeature {
             .setTargetResolution(Size(1280, 720))
             .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
             .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888)
-            .build().also { analysis ->
-                analysis.setAnalyzer(analysisExecutor) { imageProxy ->
-                    handleAnalysisFrame(imageProxy)
-                }
-            }
+            .build()
 
         provider.unbindAll()
+        Log.i(
+            TAG,
+            "tsMs=${System.currentTimeMillis()} milestone=unbind all reason=bind-stream",
+        )
         unexpectedAnalysisFrameCount = 0
         analysisFrameWidth = 0
         analysisFrameHeight = 0
+        analysisFirstFrameLogged = false
         provider.bindToLifecycle(
             CameraSessionLifecycleOwner,
             selectedLensOption.toSelector(),
             imageAnalysisUseCase,
+        )
+        imageAnalysisUseCase.setAnalyzer(analysisExecutor) { imageProxy ->
+            handleAnalysisFrame(imageProxy)
+        }
+        Log.i(
+            TAG,
+            "tsMs=${System.currentTimeMillis()} milestone=analysis-analyzer-registered mode=stream",
         )
 
         previewUseCase = null
@@ -199,7 +259,33 @@ object CameraFeature {
         videoCapture = null
         imageAnalysis = imageAnalysisUseCase
         isBound = true
+        bindMode = BindMode.Stream
+        Log.i(
+            TAG,
+            "tsMs=${System.currentTimeMillis()} milestone=bind success mode=stream composition=imageAnalysis expected=${STREAM_ANALYSIS_EXPECTED_WIDTH}x${STREAM_ANALYSIS_EXPECTED_HEIGHT}",
+        )
         return true
+    }
+
+    fun stopStreamCapturePipeline() {
+        if (!isBound || bindMode != BindMode.Stream) {
+            return
+        }
+        cameraProvider?.unbindAll()
+        previewUseCase = null
+        imageCapture = null
+        videoCapture = null
+        imageAnalysis = null
+        isBound = false
+        bindMode = BindMode.None
+        unexpectedAnalysisFrameCount = 0
+        analysisFrameWidth = 0
+        analysisFrameHeight = 0
+        analysisFirstFrameLogged = false
+        Log.i(
+            TAG,
+            "tsMs=${System.currentTimeMillis()} milestone=unbind all reason=stop-stream-pipeline",
+        )
     }
 
     fun stopPreview() {
@@ -210,9 +296,15 @@ object CameraFeature {
         videoCapture = null
         imageAnalysis = null
         isBound = false
+        bindMode = BindMode.None
         unexpectedAnalysisFrameCount = 0
         analysisFrameWidth = 0
         analysisFrameHeight = 0
+        analysisFirstFrameLogged = false
+        Log.i(
+            TAG,
+            "tsMs=${System.currentTimeMillis()} milestone=unbind all reason=stop-preview",
+        )
     }
 
     fun takePicture(
@@ -338,6 +430,13 @@ object CameraFeature {
             }
 
             Log.d(TAG, "tsMs=${System.currentTimeMillis()} milestone=analysis frame received size=${imageProxy.width}x${imageProxy.height} ts=$timestampNs")
+            if (!analysisFirstFrameLogged) {
+                analysisFirstFrameLogged = true
+                Log.i(
+                    TAG,
+                    "tsMs=${System.currentTimeMillis()} milestone=analysis-first-frame size=${imageProxy.width}x${imageProxy.height} ts=$timestampNs",
+                )
+            }
 
             if (analysisFrameWidth != imageProxy.width || analysisFrameHeight != imageProxy.height) {
                 analysisFrameWidth = imageProxy.width
@@ -364,6 +463,10 @@ object CameraFeature {
                     timestampNs = imageProxy.imageInfo.timestamp,
                     i420Data = i420,
                 ),
+            )
+            Log.d(
+                TAG,
+                "tsMs=${System.currentTimeMillis()} milestone=analysis-frame-delivered size=${imageProxy.width}x${imageProxy.height} ts=$timestampNs",
             )
         } catch (throwable: Throwable) {
             Log.e(TAG, "analysis frame handling failed: ${throwable.message.orEmpty()}", throwable)
