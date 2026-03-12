@@ -14,6 +14,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import android.text.InputType
+import android.util.Log
 import android.widget.Button
 import android.widget.EditText
 import android.widget.TextView
@@ -30,6 +31,9 @@ import com.example.templei.ui.navigation.TopNavigation
  * TODO: Keep wiring localized to this screen while transport internals are integrated incrementally.
  */
 class Screen2Activity : ComponentActivity() {
+    private companion object {
+        private const val UI_LOG_TAG = "TempleI-UI"
+    }
     private lateinit var obsSetupSummaryText: TextView
     private lateinit var sessionStateText: TextView
     private lateinit var validationResultText: TextView
@@ -150,6 +154,7 @@ class Screen2Activity : ComponentActivity() {
             appendStartupPhase(getString(R.string.obs_startup_phase_starting))
             renderStatus()
 
+            Log.i(UI_LOG_TAG, "milestone=start button pressed")
             val binder = streamSessionBinder
             val result = if (binder != null) {
                 binder.startSession(currentConfig)
@@ -174,6 +179,7 @@ class Screen2Activity : ComponentActivity() {
             renderStatus()
         }
         findViewById<Button>(R.id.setupImplementationMapButton).setOnClickListener {
+            Log.i(UI_LOG_TAG, "milestone=stop button pressed")
             streamSessionBinder?.stopSession() ?: ExportFeature.stopStream()
             isStartInFlight = false
             appendStartupPhase(getString(R.string.obs_startup_phase_stopped))

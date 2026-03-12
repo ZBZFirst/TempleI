@@ -12,6 +12,7 @@ import android.content.pm.PackageManager
 import android.os.Bundle
 import android.os.IBinder
 import android.text.InputType
+import android.util.Log
 import android.widget.Button
 import android.widget.EditText
 import android.widget.TextView
@@ -31,6 +32,9 @@ import java.util.Date
 import java.util.Locale
 
 class Screen1Activity : ComponentActivity() {
+    private companion object {
+        private const val UI_LOG_TAG = "TempleI-UI"
+    }
     private lateinit var previewView: PreviewView
     private lateinit var statusText: TextView
     private lateinit var startButton: Button
@@ -202,6 +206,7 @@ class Screen1Activity : ComponentActivity() {
             appendStartupPhase(getString(R.string.obs_startup_phase_starting))
             renderStatus()
 
+            Log.i(UI_LOG_TAG, "milestone=start button pressed")
             val binder = streamSessionBinder
             val result = if (binder != null) {
                 binder.startSession(currentConfig)
@@ -226,6 +231,7 @@ class Screen1Activity : ComponentActivity() {
             renderStatus()
         }
         findViewById<Button>(R.id.setupImplementationMapButton).setOnClickListener {
+            Log.i(UI_LOG_TAG, "milestone=stop button pressed")
             streamSessionBinder?.stopSession() ?: ExportFeature.stopStream()
             isStartInFlight = false
             appendStartupPhase(getString(R.string.obs_startup_phase_stopped))
