@@ -76,6 +76,28 @@ object CameraFeature {
     private var analysisFrameHeight = 0
     private var analysisFirstFrameLogged = false
 
+    data class CameraDiagnostics(
+        val selectedLens: LensOption,
+        val bindMode: String,
+        val isBound: Boolean,
+        val isRecording: Boolean,
+    )
+
+    data class CameraUseCaseDiagnostics(
+        val previewAttached: Boolean,
+        val imageCaptureAttached: Boolean,
+        val videoCaptureAttached: Boolean,
+        val imageAnalysisAttached: Boolean,
+    )
+
+    data class AnalyzerDiagnostics(
+        val unexpectedAnalysisFrameCount: Long,
+        val analysisFrameWidth: Int,
+        val analysisFrameHeight: Int,
+        val firstFrameLogged: Boolean,
+        val frameListenerAttached: Boolean,
+    )
+
     fun selectedLens(): LensOption = selectedLensOption
 
     fun selectLens(option: LensOption) {
@@ -420,6 +442,34 @@ object CameraFeature {
     fun isPreviewRunning(): Boolean = isBound
 
     fun isVideoRecording(): Boolean = isRecording
+
+    fun cameraDiagnostics(): CameraDiagnostics {
+        return CameraDiagnostics(
+            selectedLens = selectedLensOption,
+            bindMode = bindMode.name,
+            isBound = isBound,
+            isRecording = isRecording,
+        )
+    }
+
+    fun useCaseDiagnostics(): CameraUseCaseDiagnostics {
+        return CameraUseCaseDiagnostics(
+            previewAttached = previewUseCase != null,
+            imageCaptureAttached = imageCapture != null,
+            videoCaptureAttached = videoCapture != null,
+            imageAnalysisAttached = imageAnalysis != null,
+        )
+    }
+
+    fun analyzerDiagnostics(): AnalyzerDiagnostics {
+        return AnalyzerDiagnostics(
+            unexpectedAnalysisFrameCount = unexpectedAnalysisFrameCount,
+            analysisFrameWidth = analysisFrameWidth,
+            analysisFrameHeight = analysisFrameHeight,
+            firstFrameLogged = analysisFirstFrameLogged,
+            frameListenerAttached = frameOutputListener != null,
+        )
+    }
 
     private fun handleAnalysisFrame(imageProxy: ImageProxy) {
         val timestampNs = imageProxy.imageInfo.timestamp
