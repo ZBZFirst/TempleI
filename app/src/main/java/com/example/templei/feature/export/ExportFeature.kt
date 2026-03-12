@@ -470,6 +470,15 @@ object ExportFeature {
     }
 
 
+    private fun logStageGateTransitionIfNeeded(stageGate: InteropStageGate) {
+        val signature = "${stageGate.firstFailedStage}:${stageGate.reasonCode}:${stageGate.summary}"
+        if (signature != lastStageGateSignature) {
+            lastStageGateSignature = signature
+            Log.i(STREAM_TAG, "tsMs=${System.currentTimeMillis()} interop stage gate update: $signature")
+        }
+    }
+
+
 
     private fun refreshDiagnosticsSnapshotIfDue(nowMs: Long = System.currentTimeMillis()): String {
         if (nowMs - lastDiagnosticAtMs >= DIAGNOSTIC_REFRESH_INTERVAL_MS || lastDiagnosticSummary == "diagnostics pending") {
