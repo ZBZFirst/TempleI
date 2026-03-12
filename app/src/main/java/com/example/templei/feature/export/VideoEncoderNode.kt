@@ -35,6 +35,20 @@ object VideoEncoderNode {
         val trackIndex: Int = 0,
     )
 
+
+    data class EncoderDiagnostics(
+        val state: NodeState,
+        val lastError: String,
+        val configuredWidth: Int,
+        val configuredHeight: Int,
+        val fps: Int,
+        val bitrate: Int,
+        val framesQueuedIn: Long,
+        val framesEncoded: Long,
+        val framesDroppedNoInputBuffer: Long,
+        val encodedAccessUnitCount: Long,
+    )
+
     private const val MIME_TYPE = MediaFormat.MIMETYPE_VIDEO_AVC
     private const val I_FRAME_INTERVAL_SECONDS = 1
     private const val LOG_FIRST_AU_EVENTS = 5L
@@ -170,6 +184,23 @@ object VideoEncoderNode {
     fun state(): NodeState = nodeState
 
     fun error(): String = lastError
+
+
+    fun diagnostics(): EncoderDiagnostics {
+        return EncoderDiagnostics(
+            state = nodeState,
+            lastError = lastError,
+            configuredWidth = activeConfig.width,
+            configuredHeight = activeConfig.height,
+            fps = activeConfig.fps,
+            bitrate = activeConfig.bitrate,
+            framesQueuedIn = framesQueuedIn,
+            framesEncoded = framesEncoded,
+            framesDroppedNoInputBuffer = framesDroppedNoInputBuffer,
+            encodedAccessUnitCount = encodedAccessUnitCount,
+        )
+    }
+
 
     private fun restartForResolution(frameWidth: Int, frameHeight: Int): Result<Unit> {
         if (frameWidth <= 0 || frameHeight <= 0) {
