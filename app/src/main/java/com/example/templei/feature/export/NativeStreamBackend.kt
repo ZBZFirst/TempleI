@@ -1,5 +1,7 @@
 package com.example.templei.feature.export
 
+import android.util.Log
+
 /**
  * Backend contract for native stream transport wiring.
  *
@@ -212,7 +214,12 @@ internal fun deriveFfmpegHealthHint(
 }
 
 private object FfmpegStreamBackend : NativeStreamBackend {
-    private const val FFMPEG_NATIVE_LIBRARY = "templei_ffmpeg"
+    private const val STREAM_TAG = "TempleI-Stream"
+    private const val MUX_TAG = "TempleI-Mux"
+    private const val SRT_TAG = "TempleI-SRT"
+    private const val NET_TAG = "TempleI-Net"
+    private const val ERROR_TAG = "TempleI-Error"
+    private const val FFMPEG_NATIVE_LIBRARY = "templei-native"
     private const val MAX_CONNECT_RETRIES = 3
     private const val CONNECT_RETRY_BACKOFF_MS = 120L
 
@@ -282,25 +289,31 @@ private object FfmpegStreamBackend : NativeStreamBackend {
         }
 
         val runtimeInstance = runtimeResult.getOrThrow()
+        Log.i(NET_TAG, "tsMs=${System.currentTimeMillis()} milestone=network host=${endpoint.host} port=${endpoint.port} latency=${endpoint.latencyMs} mode=${endpoint.mode}")
         val prepareResult = runtimeInstance.prepare(endpoint, videoEnabled, audioEnabled)
+        Log.i(MUX_TAG, "tsMs=${System.currentTimeMillis()} milestone=mux prepared videoEnabled=$videoEnabled audioEnabled=$audioEnabled")
         if (prepareResult.isFailure) {
             lastError = prepareResult.exceptionOrNull()?.message.orEmpty()
+            Log.e(ERROR_TAG, "tsMs=${System.currentTimeMillis()} native-return-code prepare failed error=$lastError")
             return prepareResult
         }
 
         var attempt = 0
         var startFailure: Throwable? = null
         while (attempt < MAX_CONNECT_RETRIES) {
+            Log.i(SRT_TAG, "tsMs=${System.currentTimeMillis()} milestone=SRT connect attempt attempt=${attempt + 1} url=${endpoint.toSrtUrl()}")
             val startResult = runtimeInstance.start()
             if (startResult.isSuccess) {
                 started = true
                 lastRetryAttempts = attempt
                 lastError = ""
+                Log.i(STREAM_TAG, "tsMs=${System.currentTimeMillis()} milestone=stream started connectionState=connected retries=$attempt")
                 lastStatsSnapshot = runtimeInstance.statsSnapshot()
                 return Result.success(Unit)
             }
             started = false
             startFailure = startResult.exceptionOrNull()
+            Log.e(ERROR_TAG, "tsMs=${System.currentTimeMillis()} native-return-code start failed attempt=${attempt + 1} reason=${startFailure?.message.orEmpty()}")
             attempt += 1
             if (attempt < MAX_CONNECT_RETRIES) {
                 Thread.sleep(CONNECT_RETRY_BACKOFF_MS)
@@ -311,6 +324,7 @@ private object FfmpegStreamBackend : NativeStreamBackend {
         terminalFailureCount += 1
         val failureMessage = startFailure?.message.orEmpty().ifBlank { "native start failed after retry budget" }
         lastError = "connect retries exhausted ($attempt/$MAX_CONNECT_RETRIES): $failureMessage"
+        Log.e(ERROR_TAG, "tsMs=${System.currentTimeMillis()} native-return-code connect retries exhausted error=$lastError")
         return Result.failure(IllegalStateException(lastError))
     }
 
@@ -327,6 +341,7 @@ private object FfmpegStreamBackend : NativeStreamBackend {
         val pushResult = runtimeResult.getOrThrow().pushVideo(accessUnit)
         if (pushResult.isFailure) {
             lastError = pushResult.exceptionOrNull()?.message.orEmpty()
+            Log.e(ERROR_TAG, "tsMs=${System.currentTimeMillis()} packet write failure type=video reason=$lastError")
         }
         lastStatsSnapshot = runtimeResult.getOrThrow().statsSnapshot()
         return pushResult
@@ -345,6 +360,7 @@ private object FfmpegStreamBackend : NativeStreamBackend {
         val pushResult = runtimeResult.getOrThrow().pushAudio(accessUnit)
         if (pushResult.isFailure) {
             lastError = pushResult.exceptionOrNull()?.message.orEmpty()
+            Log.e(ERROR_TAG, "tsMs=${System.currentTimeMillis()} packet write failure type=audio reason=$lastError")
         }
         lastStatsSnapshot = runtimeResult.getOrThrow().statsSnapshot()
         return pushResult
@@ -353,6 +369,7 @@ private object FfmpegStreamBackend : NativeStreamBackend {
     override fun stop(): Result<Unit> {
         val runtimeInstance = resolveRuntime().getOrNull()
         runtimeInstance?.stop()
+        Log.i(STREAM_TAG, "tsMs=${System.currentTimeMillis()} milestone=stream stopped")
         started = false
         videoEnabled = false
         audioEnabled = false
@@ -374,12 +391,14 @@ private object FfmpegStreamBackend : NativeStreamBackend {
         val connectSuccess = Regex("""connectSuccess=(\d+)""").find(statsSnapshot)?.groupValues?.get(1)?.toLongOrNull() ?: 0L
         val connectFailures = Regex("""connectFailures=(\d+)""").find(statsSnapshot)?.groupValues?.get(1)?.toLongOrNull() ?: 0L
         val consecutiveWriteFailures = Regex("""consecutiveWriteFailures=(\d+)""").find(statsSnapshot)?.groupValues?.get(1)?.toLongOrNull() ?: 0L
-        return when {
+        val connectionState = when {
             started && connectSuccess > 0L && consecutiveWriteFailures == 0L -> "connected"
             started && consecutiveWriteFailures > 0L -> "retrying"
             connectFailures > 0L || terminalFailureCount > 0 -> "faulted"
             else -> "idle"
         }
+        Log.d(NET_TAG, "tsMs=${System.currentTimeMillis()} milestone=connection state state=$connectionState connectSuccess=$connectSuccess connectFailures=$connectFailures consecutiveWriteFailures=$consecutiveWriteFailures")
+        return connectionState
     }
 
     private fun resolveRuntime(): Result<Runtime> {
@@ -402,6 +421,7 @@ private object FfmpegStreamBackend : NativeStreamBackend {
     private fun loadRuntime(): RuntimeBinding {
         return runCatching {
             System.loadLibrary(FFMPEG_NATIVE_LIBRARY)
+            Log.d(SRT_TAG, "TempleI-SRT native library loaded")
             RuntimeBinding.Loaded(JniRuntime)
         }.getOrElse { error ->
             val reason = error.message ?: error::class.java.simpleName
@@ -432,6 +452,7 @@ private object FfmpegStreamBackend : NativeStreamBackend {
 
     private object JniRuntime : Runtime {
         override fun probeRuntime(): Boolean {
+            Log.d(SRT_TAG, "TempleI-SRT runtime probe invoked")
             return FfmpegNativeBridge.nativeProbeRuntime()
         }
 

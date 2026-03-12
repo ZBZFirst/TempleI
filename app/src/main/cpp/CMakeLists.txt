@@ -10,7 +10,7 @@ add_library(templei_mux SHARED templei_mux_stub.cpp)
 
 add_library(templei_srt SHARED templei_srt_stub.cpp)
 
-add_library(templei_ffmpeg SHARED templei_ffmpeg_stub.cpp)
+add_library(templei-native SHARED templei_ffmpeg_stub.cpp)
 
 # ---------------------------------------------------------
 # Android system libraries
@@ -28,7 +28,7 @@ set(FFMPEG_HEADERS_DIR
 )
 
 target_include_directories(
-        templei_ffmpeg
+        templei-native
         PRIVATE
         ${FFMPEG_HEADERS_DIR}
 )
@@ -81,7 +81,7 @@ target_link_libraries(
 )
 
 target_link_libraries(
-        templei_ffmpeg
+        templei-native
         ${log-lib}
         ${dl-lib}
         ffmpeg_avformat
