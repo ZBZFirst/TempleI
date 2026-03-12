@@ -11,6 +11,7 @@ import android.content.ServiceConnection
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.os.IBinder
+import android.os.SystemClock
 import android.text.InputType
 import android.util.Log
 import android.widget.Button
@@ -21,6 +22,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
 import com.example.templei.feature.camera.CameraFeature
 import com.example.templei.feature.export.CaptureCoordinator
 import com.example.templei.feature.export.ExportFeature
@@ -53,12 +55,19 @@ class Screen1Activity : ComponentActivity() {
     private lateinit var startupProgressText: TextView
     private lateinit var toggleStreamPathButton: Button
     private lateinit var startStreamButton: Button
+    private lateinit var editHostButton: Button
+    private lateinit var editPortButton: Button
+    private lateinit var validateEndpointButton: Button
+    private lateinit var resetPresetButton: Button
 
     private var currentConfig = ExportFeature.ObsStreamConfig()
     private var isStartInFlight = false
     private val startupPhaseLines = mutableListOf<String>()
     private var streamSessionBinder: StreamSessionService.LocalBinder? = null
     private var isServiceBound = false
+    private var activeFailureDialog: AlertDialog? = null
+    private var lastFailureDialogMessage: String = ""
+    private var lastFailureDialogAtMs: Long = 0L
 
     private val streamServiceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
@@ -146,6 +155,10 @@ class Screen1Activity : ComponentActivity() {
         startupProgressText = findViewById(R.id.startupProgressText)
         toggleStreamPathButton = findViewById(R.id.setupFailureDomainsButton)
         startStreamButton = findViewById(R.id.setupContractsButton)
+        editHostButton = findViewById(R.id.defineEndpointButton)
+        editPortButton = findViewById(R.id.defineTransportButton)
+        validateEndpointButton = findViewById(R.id.defineMuxingButton)
+        resetPresetButton = findViewById(R.id.defineRecoveryButton)
     }
 
     private fun bindCameraButtons() {
@@ -168,19 +181,19 @@ class Screen1Activity : ComponentActivity() {
     }
 
     private fun bindObsButtons() {
-        findViewById<Button>(R.id.defineEndpointButton).setOnClickListener { promptForHost() }
-        findViewById<Button>(R.id.defineTransportButton).setOnClickListener { promptForPort() }
-        findViewById<Button>(R.id.defineMuxingButton).setOnClickListener {
+        editHostButton.setOnClickListener { promptForHost() }
+        editPortButton.setOnClickListener { promptForPort() }
+        validateEndpointButton.setOnClickListener {
             if (currentConfig.host.isBlank()) {
                 promptForHost(); return@setOnClickListener
             }
             val result = ExportFeature.validateConfig(currentConfig)
             val endpointMessage = ExportFeature.testEndpoint(currentConfig)
             if (result.isValid) ExportFeature.saveConfig(this, currentConfig)
-            if (endpointMessage.startsWith("preflight failed:")) showBlockingEndpointError(endpointMessage)
+            if (endpointMessage.startsWith("preflight failed:")) showBlockingEndpointErrorSafely(endpointMessage)
             renderStatus()
         }
-        findViewById<Button>(R.id.defineRecoveryButton).setOnClickListener {
+        resetPresetButton.setOnClickListener {
             currentConfig = ExportFeature.resetConfig(this)
             renderStatus()
         }
@@ -194,41 +207,60 @@ class Screen1Activity : ComponentActivity() {
             ExportFeature.saveConfig(this, currentConfig)
             renderStatus()
         }
-        findViewById<Button>(R.id.setupContractsButton).setOnClickListener {
+        startStreamButton.setOnClickListener {
             if (currentConfig.host.isBlank()) {
                 promptForHost()
                 return@setOnClickListener
             }
+            if (isStartInFlight) {
+                return@setOnClickListener
+            }
+
+            val startConfigSummary = startupConfigSnapshotLine(currentConfig)
 
             startupPhaseLines.clear()
             appendStartupPhase(getString(R.string.obs_startup_phase_start_requested))
+            appendStartupPhase("start-config $startConfigSummary")
             isStartInFlight = true
             appendStartupPhase(getString(R.string.obs_startup_phase_starting))
             renderStatus()
 
-            Log.i(UI_LOG_TAG, "milestone=start button pressed")
+            Log.i(UI_LOG_TAG, "milestone=start button pressed $startConfigSummary")
             val binder = streamSessionBinder
-            val result = if (binder != null) {
-                binder.startSession(currentConfig)
-            } else {
-                ExportFeature.markFault(getString(R.string.obs_service_unavailable))
+            if (binder == null) {
+                val result = ExportFeature.markFault(getString(R.string.obs_service_unavailable))
+                isStartInFlight = false
+                appendStartupPhase(getString(R.string.obs_startup_phase_result, result.state.name.lowercase()))
+                appendStartupPhase("start-fault-config $startConfigSummary")
+                renderStatus()
+                return@setOnClickListener
             }
 
-            isStartInFlight = false
-            appendStartupPhase(getString(R.string.obs_startup_phase_result, result.state.name.lowercase()))
+            Thread {
+                val result = runCatching { binder.startSession(currentConfig) }
+                    .getOrElse { error ->
+                        ExportFeature.markFault("start session invocation failed: ${error.message.orEmpty()}")
+                    }
 
-            if (result.state == ExportFeature.SessionState.Streaming) {
-                ExportFeature.saveConfig(this, currentConfig)
-            } else if (result.state == ExportFeature.SessionState.Faulted) {
-                val faultMessage = result.error ?: getString(R.string.obs_endpoint_malformed_generic)
-                appendStartupPhase(faultMessage)
-                if (faultMessage.startsWith("preflight failed:")) {
-                    showBlockingEndpointError(faultMessage)
-                } else {
-                    showStartFailureError(faultMessage)
+                runOnUiThread {
+                    isStartInFlight = false
+                    appendStartupPhase(getString(R.string.obs_startup_phase_result, result.state.name.lowercase()))
+
+                    if (result.state == ExportFeature.SessionState.Streaming) {
+                        ExportFeature.saveConfig(this, currentConfig)
+                    } else if (result.state == ExportFeature.SessionState.Faulted) {
+                        val faultMessage = result.error ?: getString(R.string.obs_endpoint_malformed_generic)
+                        appendStartupPhase(faultMessage)
+                        appendStartupPhase("start-fault-config $startConfigSummary")
+                        if (faultMessage.startsWith("preflight failed:")) {
+                            showBlockingEndpointErrorSafely(faultMessage)
+                        } else {
+                            showStartFailureErrorSafely(faultMessage)
+                        }
+                    }
+                    renderStatus()
                 }
-            }
-            renderStatus()
+            }.start()
         }
         findViewById<Button>(R.id.setupImplementationMapButton).setOnClickListener {
             Log.i(UI_LOG_TAG, "milestone=stop button pressed")
@@ -408,6 +440,15 @@ class Screen1Activity : ComponentActivity() {
         startStreamButton.isEnabled = !isStartInFlight &&
             currentState != ExportFeature.SessionState.Starting &&
             currentState != ExportFeature.SessionState.Streaming
+
+        val configEditable = currentState != ExportFeature.SessionState.Starting &&
+            currentState != ExportFeature.SessionState.Streaming &&
+            currentState != ExportFeature.SessionState.Stopping
+        editHostButton.isEnabled = configEditable
+        editPortButton.isEnabled = configEditable
+        validateEndpointButton.isEnabled = configEditable
+        resetPresetButton.isEnabled = configEditable
+        toggleStreamPathButton.isEnabled = configEditable
         validationResultText.text = getString(R.string.obs_validation_value, ExportFeature.lastValidation())
         connectionResultText.text = getString(R.string.obs_connection_value, ExportFeature.lastConnectionTest())
         lastErrorText.text = getString(R.string.obs_last_error_value, ExportFeature.lastError().ifBlank { getString(R.string.obs_no_error) })
@@ -430,25 +471,54 @@ class Screen1Activity : ComponentActivity() {
         )
     }
 
+    private fun startupConfigSnapshotLine(config: ExportFeature.ObsStreamConfig): String {
+        val endpointSnapshot = ExportFeature.endpointValidationSnapshot(config)
+        return "host=${config.host.trim()} port=${config.port} profile=${config.profile} mode=${config.streamMode.name} " +
+            "obsInputUrl=${endpointSnapshot.obsInputUrl} transportCallerUrl=${endpointSnapshot.transportCallerUrl}"
+    }
+
     private fun appendStartupPhase(phase: String) {
         val timestamp = SimpleDateFormat("HH:mm:ss.SSS", Locale.US).format(Date())
         startupPhaseLines += "[$timestamp] $phase"
     }
 
-    private fun showBlockingEndpointError(message: String) {
-        AlertDialog.Builder(this)
-            .setTitle(R.string.obs_endpoint_malformed_title)
-            .setMessage(message)
-            .setPositiveButton(R.string.obs_ok_action, null)
-            .show()
+    private fun showBlockingEndpointErrorSafely(message: String) {
+        showFailureDialogSafely(titleRes = R.string.obs_endpoint_malformed_title, message = message)
     }
 
-    private fun showStartFailureError(message: String) {
-        AlertDialog.Builder(this)
-            .setTitle(R.string.obs_start_failure_title)
+    private fun showStartFailureErrorSafely(message: String) {
+        showFailureDialogSafely(titleRes = R.string.obs_start_failure_title, message = message)
+    }
+
+    private fun showFailureDialogSafely(titleRes: Int, message: String) {
+        if (isFinishing || isDestroyed || !lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) {
+            appendStartupPhase("dialog-suppressed state=${lifecycle.currentState} message=$message")
+            return
+        }
+
+        val nowMs = SystemClock.elapsedRealtime()
+        val duplicateBurst = message == lastFailureDialogMessage && (nowMs - lastFailureDialogAtMs) < 1200L
+        if (duplicateBurst) {
+            appendStartupPhase("dialog-suppressed duplicate message=$message")
+            return
+        }
+        lastFailureDialogMessage = message
+        lastFailureDialogAtMs = nowMs
+
+        activeFailureDialog?.dismiss()
+        activeFailureDialog = AlertDialog.Builder(this)
+            .setTitle(titleRes)
             .setMessage(message)
             .setPositiveButton(R.string.obs_ok_action, null)
-            .show()
+            .create()
+            .also { dialog ->
+                dialog.setOnDismissListener {
+                    if (activeFailureDialog == dialog) {
+                        activeFailureDialog = null
+                    }
+                }
+                dialog.show()
+            }
     }
 
     private fun updateStatus(value: String) {
@@ -461,7 +531,7 @@ class Screen1Activity : ComponentActivity() {
         startButton.isEnabled = !running
         stopButton.isEnabled = running && !recording
         pictureButton.isEnabled = running && !recording
-        recordButton.isEnabled = running
+        recordButton.isEnabled = false
         recordButton.text = if (recording) getString(R.string.camera_stop_record_button) else getString(R.string.camera_record_button)
     }
 }
