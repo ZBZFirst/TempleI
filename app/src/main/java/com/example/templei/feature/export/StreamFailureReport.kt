@@ -1,13 +1,16 @@
 package com.example.templei.feature.export
 
+import com.example.templei.feature.camera.AnalyzerRuntimeDiagnostics
 import com.example.templei.feature.camera.CameraFeature
+import com.example.templei.feature.camera.CameraRuntimeDiagnostics
+import com.example.templei.feature.camera.CameraUseCaseRuntimeDiagnostics
 
 /** Structured diagnostics report for capture pipeline/session failures. */
 data class StreamFailureReport(
     val reason: String,
-    val camera: CameraFeature.CameraDiagnostics,
-    val useCases: CameraFeature.CameraUseCaseDiagnostics,
-    val analyzerState: CameraFeature.AnalyzerDiagnostics,
+    val camera: CameraRuntimeDiagnostics,
+    val useCases: CameraUseCaseRuntimeDiagnostics,
+    val analyzerState: AnalyzerRuntimeDiagnostics,
     val videoEncoder: VideoEncoderNode.EncoderDiagnostics,
     val audioEncoder: AudioEncoderNode.EncoderDiagnostics,
     val timestamps: Timestamps,

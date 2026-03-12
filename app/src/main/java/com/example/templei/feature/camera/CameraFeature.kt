@@ -82,50 +82,6 @@ object CameraFeature {
     private var analysisFirstFrameLogged = false
     private val mainHandler = Handler(Looper.getMainLooper())
 
-    data class CameraDiagnostics(
-        val selectedLens: LensOption,
-        val bindMode: String,
-        val isBound: Boolean,
-        val isRecording: Boolean,
-    )
-
-    data class CameraUseCaseDiagnostics(
-        val previewAttached: Boolean,
-        val imageCaptureAttached: Boolean,
-        val videoCaptureAttached: Boolean,
-        val imageAnalysisAttached: Boolean,
-    )
-
-    data class AnalyzerDiagnostics(
-        val unexpectedAnalysisFrameCount: Long,
-        val analysisFrameWidth: Int,
-        val analysisFrameHeight: Int,
-        val firstFrameLogged: Boolean,
-        val frameListenerAttached: Boolean,
-    )
-
-    data class CameraDiagnostics(
-        val selectedLens: LensOption,
-        val bindMode: String,
-        val isBound: Boolean,
-        val isRecording: Boolean,
-    )
-
-    data class CameraUseCaseDiagnostics(
-        val previewAttached: Boolean,
-        val imageCaptureAttached: Boolean,
-        val videoCaptureAttached: Boolean,
-        val imageAnalysisAttached: Boolean,
-    )
-
-    data class AnalyzerDiagnostics(
-        val unexpectedAnalysisFrameCount: Long,
-        val analysisFrameWidth: Int,
-        val analysisFrameHeight: Int,
-        val firstFrameLogged: Boolean,
-        val frameListenerAttached: Boolean,
-    )
-
     fun selectedLens(): LensOption = selectedLensOption
 
     fun selectLens(option: LensOption) {
@@ -501,8 +457,8 @@ object CameraFeature {
 
     fun isVideoRecording(): Boolean = isRecording
 
-    fun cameraDiagnostics(): CameraDiagnostics {
-        return CameraDiagnostics(
+    fun cameraDiagnostics(): CameraRuntimeDiagnostics {
+        return CameraRuntimeDiagnostics(
             selectedLens = selectedLensOption,
             bindMode = bindMode.name,
             isBound = isBound,
@@ -510,8 +466,8 @@ object CameraFeature {
         )
     }
 
-    fun useCaseDiagnostics(): CameraUseCaseDiagnostics {
-        return CameraUseCaseDiagnostics(
+    fun useCaseDiagnostics(): CameraUseCaseRuntimeDiagnostics {
+        return CameraUseCaseRuntimeDiagnostics(
             previewAttached = previewUseCase != null,
             imageCaptureAttached = imageCapture != null,
             videoCaptureAttached = videoCapture != null,
@@ -519,8 +475,8 @@ object CameraFeature {
         )
     }
 
-    fun analyzerDiagnostics(): AnalyzerDiagnostics {
-        return AnalyzerDiagnostics(
+    fun analyzerDiagnostics(): AnalyzerRuntimeDiagnostics {
+        return AnalyzerRuntimeDiagnostics(
             unexpectedAnalysisFrameCount = unexpectedAnalysisFrameCount,
             analysisFrameWidth = analysisFrameWidth,
             analysisFrameHeight = analysisFrameHeight,
