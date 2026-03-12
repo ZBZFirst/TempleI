@@ -103,6 +103,10 @@ void log_mux_milestone(const std::string& event, const std::string& detail = "")
     }
 }
 
+const char* stream_name(bool isVideo) {
+    return isVideo ? "video" : "audio";
+}
+
 void refresh_runtime_info() {
     const unsigned version = avformat_version();
     g_runtime_info = version > 0
@@ -328,6 +332,7 @@ bool write_access_unit_packet(
         g_consecutiveWriteFailures.fetch_add(1);
         g_muxWriteFailures.fetch_add(1);
         set_error("native write failed: stream not declared");
+        __android_log_print(ANDROID_LOG_ERROR, kErrorTag, "tsMs=%lld milestone=packet build failed reason=stream not declared", now_ms());
         return false;
     }
 
@@ -336,8 +341,26 @@ bool write_access_unit_packet(
         g_consecutiveWriteFailures.fetch_add(1);
         g_muxWriteFailures.fetch_add(1);
         set_error("native write failed: output lifecycle not active");
+        __android_log_print(ANDROID_LOG_ERROR, kErrorTag, "tsMs=%lld milestone=native write rejected reason=output lifecycle not active", now_ms());
         return false;
     }
+
+    const long long pts = av_rescale_q(normalizedPtsUs, kInputPtsTimebase, stream->time_base);
+    const long long dts = pts;
+    const long long duration = av_rescale_q(isVideo ? 33'333LL : 21'333LL, kInputPtsTimebase, stream->time_base);
+    const int key = (flags & 1) != 0 ? 1 : 0;
+    __android_log_print(
+        ANDROID_LOG_INFO,
+        kMuxTag,
+        "tsMs=%lld milestone=packet build stream=%s size=%d pts=%lld dts=%lld duration=%lld key=%d",
+        now_ms(),
+        stream_name(isVideo),
+        static_cast<int>(payload.size()),
+        pts,
+        dts,
+        duration,
+        key
+    );
 
     AVPacket* packet = av_packet_alloc();
     if (packet == nullptr) {
@@ -345,6 +368,7 @@ bool write_access_unit_packet(
         g_consecutiveWriteFailures.fetch_add(1);
         g_muxWriteFailures.fetch_add(1);
         set_error("native write failed: av_packet_alloc returned null");
+        __android_log_print(ANDROID_LOG_ERROR, kErrorTag, "tsMs=%lld milestone=packet build failed reason=av_packet_alloc null", now_ms());
         return false;
     }
 
@@ -355,28 +379,39 @@ bool write_access_unit_packet(
         g_consecutiveWriteFailures.fetch_add(1);
         g_muxWriteFailures.fetch_add(1);
         set_error("native write failed: av_new_packet returned " + ffmpeg_error_string(newPacketResult));
+        __android_log_print(ANDROID_LOG_ERROR, kErrorTag, "tsMs=%lld milestone=packet build failed reason=av_new_packet", now_ms());
         return false;
     }
 
     std::memcpy(packet->data, payload.data(), payload.size());
     packet->stream_index = stream->index;
     packet->pos = -1;
-    packet->pts = av_rescale_q(normalizedPtsUs, kInputPtsTimebase, stream->time_base);
-    packet->dts = packet->pts;
-    packet->duration = av_rescale_q(isVideo ? 33'333LL : 21'333LL, kInputPtsTimebase, stream->time_base);
+    packet->pts = pts;
+    packet->dts = dts;
+    packet->duration = duration;
     if ((flags & 1) != 0) {
         packet->flags |= AV_PKT_FLAG_KEY;
     }
 
+    __android_log_print(
+        ANDROID_LOG_INFO,
+        kMuxTag,
+        "tsMs=%lld milestone=packet write begin stream=%s pts=%lld dts=%lld",
+        now_ms(),
+        stream_name(isVideo),
+        packet->pts,
+        packet->dts
+    );
     const int writeResult = av_interleaved_write_frame(g_outputFormatContext, packet);
     if (writeResult < 0) {
         av_packet_free(&packet);
         g_writePacketsFailed.fetch_add(1);
         g_consecutiveWriteFailures.fetch_add(1);
         g_muxWriteFailures.fetch_add(1);
-        set_error("native write failed: av_interleaved_write_frame returned " + ffmpeg_error_string(writeResult));
-        __android_log_print(ANDROID_LOG_ERROR, kErrorTag, "tsMs=%lld packet write failure code=%d error=%s", now_ms(), writeResult, ffmpeg_error_string(writeResult).c_str());
-        log_mux_milestone("packet-write-failed", "err=" + ffmpeg_error_string(writeResult));
+        const std::string err = ffmpeg_error_string(writeResult);
+        set_error("native write failed: av_interleaved_write_frame returned " + err);
+        __android_log_print(ANDROID_LOG_ERROR, kErrorTag, "tsMs=%lld milestone=packet write failed rc=%d err=%s", now_ms(), writeResult, err.c_str());
+        __android_log_print(ANDROID_LOG_ERROR, kErrorTag, "tsMs=%lld milestone=native write rejected reason=av_interleaved_write_frame", now_ms());
         return false;
     }
 
@@ -388,8 +423,19 @@ bool write_access_unit_packet(
     g_writeBytesSucceeded.store(g_muxBytesWritten.load());
     g_consecutiveWriteFailures.store(0);
     g_lastSuccessfulWriteMs.store(now_ms());
+    __android_log_print(ANDROID_LOG_INFO, kMuxTag, "tsMs=%lld milestone=packet write result stream=%s rc=%d", now_ms(), stream_name(isVideo), 0);
+    __android_log_print(
+        ANDROID_LOG_INFO,
+        kMuxTag,
+        "tsMs=%lld milestone=packets written total=%lld audio=%lld video=%lld",
+        now_ms(),
+        g_muxPacketsWritten.load(),
+        g_audioAuCount.load(),
+        g_videoAuCount.load()
+    );
+    __android_log_print(ANDROID_LOG_INFO, kMuxTag, "tsMs=%lld milestone=bytes written total=%lld", now_ms(), g_muxBytesWritten.load());
     if (!g_firstPacketWritten.exchange(true)) {
-        log_mux_milestone("first-packet-written", "streamIndex=" + std::to_string(stream->index));
+        __android_log_print(ANDROID_LOG_INFO, kMuxTag, "tsMs=%lld milestone=first packet written stream=%s", now_ms(), stream_name(isVideo));
     }
     return true;
 }
@@ -588,17 +634,19 @@ Java_com_example_templei_feature_export_FfmpegNativeBridge_nativePushVideoAccess
         g_writePacketsFailed.fetch_add(1);
         g_consecutiveWriteFailures.fetch_add(1);
         set_error("nativePushVideoAccessUnit failed: backend not started");
+        __android_log_print(ANDROID_LOG_ERROR, kErrorTag, "tsMs=%lld milestone=video write skipped reason=backend not started", now_ms());
         return JNI_FALSE;
     }
     if (!g_videoEnabled.load()) {
         g_writePacketsFailed.fetch_add(1);
         g_consecutiveWriteFailures.fetch_add(1);
         set_error("nativePushVideoAccessUnit rejected: video path disabled by stream mode");
+        __android_log_print(ANDROID_LOG_ERROR, kErrorTag, "tsMs=%lld milestone=video write skipped reason=video path disabled", now_ms());
         return JNI_FALSE;
     }
 
     const jsize size = data == nullptr ? 0 : env->GetArrayLength(data);
-    if (size <= 0) return JNI_TRUE;
+    if (size <= 0) { __android_log_print(ANDROID_LOG_ERROR, kErrorTag, "tsMs=%lld milestone=video write skipped reason=empty payload", now_ms()); return JNI_TRUE; }
 
     std::vector<unsigned char> payload(static_cast<size_t>(size));
     env->GetByteArrayRegion(data, 0, size, reinterpret_cast<jbyte*>(payload.data()));
@@ -661,17 +709,19 @@ Java_com_example_templei_feature_export_FfmpegNativeBridge_nativePushAudioAccess
         g_writePacketsFailed.fetch_add(1);
         g_consecutiveWriteFailures.fetch_add(1);
         set_error("nativePushAudioAccessUnit failed: backend not started");
+        __android_log_print(ANDROID_LOG_ERROR, kErrorTag, "tsMs=%lld milestone=audio write skipped reason=backend not started", now_ms());
         return JNI_FALSE;
     }
     if (!g_audioEnabled.load()) {
         g_writePacketsFailed.fetch_add(1);
         g_consecutiveWriteFailures.fetch_add(1);
         set_error("nativePushAudioAccessUnit rejected: audio path disabled by stream mode");
+        __android_log_print(ANDROID_LOG_ERROR, kErrorTag, "tsMs=%lld milestone=audio write skipped reason=audio path disabled", now_ms());
         return JNI_FALSE;
     }
 
     const jsize size = data == nullptr ? 0 : env->GetArrayLength(data);
-    if (size <= 0) return JNI_TRUE;
+    if (size <= 0) { __android_log_print(ANDROID_LOG_ERROR, kErrorTag, "tsMs=%lld milestone=audio write skipped reason=empty payload", now_ms()); return JNI_TRUE; }
 
     std::vector<unsigned char> payload(static_cast<size_t>(size));
     env->GetByteArrayRegion(data, 0, size, reinterpret_cast<jbyte*>(payload.data()));
