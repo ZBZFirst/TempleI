@@ -16,6 +16,7 @@ object CaptureCoordinator {
     private const val ENCODER_TO_MUX_QUEUE_CAPACITY = 32
     private const val LOG_FIRST_EVENTS = 5L
     private const val LOG_EVERY_N_EVENTS = 120L
+    private const val VIDEO_STARTUP_GRACE_TIMEOUT_MS = 3_000L
 
     enum class StreamPathMode {
         ConnectionOnly,
@@ -65,6 +66,59 @@ object CaptureCoordinator {
 
     @Volatile
     private var audioOutputListenerAttached = false
+
+    @Volatile
+    private var videoStartupGraceActive = false
+
+    @Volatile
+    private var firstVideoFrameObserved = false
+
+    @Volatile
+    private var deferredStopDuringGrace = false
+
+    private fun beginVideoStartupGraceWindow(streamMode: StreamPathMode) {
+        val needsVideoFrames = streamMode != StreamPathMode.AudioOnly
+        videoStartupGraceActive = needsVideoFrames
+        firstVideoFrameObserved = false
+        deferredStopDuringGrace = false
+        if (!needsVideoFrames) {
+            return
+        }
+
+        Log.i(
+            TAG,
+            "tsMs=${System.currentTimeMillis()} milestone=stream-start grace-period-begin timeoutMs=$VIDEO_STARTUP_GRACE_TIMEOUT_MS mode=$streamMode",
+        )
+
+        Thread {
+            Thread.sleep(VIDEO_STARTUP_GRACE_TIMEOUT_MS)
+            if (!videoStartupGraceActive) {
+                return@Thread
+            }
+            videoStartupGraceActive = false
+            Log.i(
+                TAG,
+                "tsMs=${System.currentTimeMillis()} milestone=stream-start grace-period-expired timeoutMs=$VIDEO_STARTUP_GRACE_TIMEOUT_MS firstFrame=$firstVideoFrameObserved",
+            )
+            if (deferredStopDuringGrace) {
+                stopCapturePathSession(forceStop = true, reason = "deferred-stop-after-grace")
+            }
+        }.start()
+    }
+
+    private fun onFirstVideoFrameIfNeeded() {
+        if (firstVideoFrameObserved) {
+            return
+        }
+        firstVideoFrameObserved = true
+        if (videoStartupGraceActive) {
+            videoStartupGraceActive = false
+        }
+        Log.i(
+            TAG,
+            "tsMs=${System.currentTimeMillis()} milestone=first-video-frame-received",
+        )
+    }
 
     data class RuntimeStats(
         val cameraFramesEnqueued: Long,
@@ -131,16 +185,46 @@ object CaptureCoordinator {
             return StartResult(isReady = true)
         }
 
+        Log.i(
+            TAG,
+            "tsMs=${System.currentTimeMillis()} milestone=stream-start transition=begin mode=$streamMode",
+        )
+        beginVideoStartupGraceWindow(streamMode)
+
+        if (streamMode != StreamPathMode.AudioOnly) {
+            CameraFeature.setFrameOutputListener { frame ->
+                StreamPipelineMetrics.recordCameraArrival()
+                onFirstVideoFrameIfNeeded()
+                Log.d(
+                    TAG,
+                    "tsMs=${System.currentTimeMillis()} milestone=frame queued to video encoder size=${frame.i420Data.size} ptsUs=${frame.timestampNs / 1_000L}",
+                )
+                enqueueCameraFrame(frame)
+            }
+            frameOutputListenerAttached = true
+        } else {
+            CameraFeature.setFrameOutputListener(null)
+            frameOutputListenerAttached = false
+        }
+
         val captureReady = runCatching {
             CameraFeature.ensureCapturePipeline(context) {
                 Log.e(TAG, "camera capture pipeline unavailable on selected lens")
             }
         }.getOrElse { error ->
+            CameraFeature.setFrameOutputListener(null)
+            frameOutputListenerAttached = false
+            videoStartupGraceActive = false
+            deferredStopDuringGrace = false
             val reason = error.message?.ifBlank { error::class.java.simpleName } ?: error::class.java.simpleName
             Log.e(TAG, "camera capture pipeline start failed: $reason", error)
             return StartResult(isReady = false, error = "camera capture pipeline start failed: $reason")
         }
         if (!captureReady) {
+            CameraFeature.setFrameOutputListener(null)
+            frameOutputListenerAttached = false
+            videoStartupGraceActive = false
+            deferredStopDuringGrace = false
             return StartResult(isReady = false, error = "camera capture pipeline not running")
         }
 
@@ -179,12 +263,20 @@ object CaptureCoordinator {
 
         val videoConfigured: Result<Unit> = VideoEncoderNode.configure(videoEncoderConfig)
         if (videoConfigured.isFailure) {
+            CameraFeature.setFrameOutputListener(null)
+            frameOutputListenerAttached = false
+            videoStartupGraceActive = false
+            deferredStopDuringGrace = false
             stopRelayWorkers()
             return StartResult(isReady = false, error = VideoEncoderNode.error())
         }
 
         val audioConfigured: Result<Unit> = AudioEncoderNode.configure(audioEncoderConfig)
         if (audioConfigured.isFailure) {
+            CameraFeature.setFrameOutputListener(null)
+            frameOutputListenerAttached = false
+            videoStartupGraceActive = false
+            deferredStopDuringGrace = false
             stopRelayWorkers()
             return StartResult(isReady = false, error = AudioEncoderNode.error())
         }
@@ -194,17 +286,12 @@ object CaptureCoordinator {
                 enqueueMuxIngress(MuxIngressItem.Video(accessUnit))
             }
             videoOutputListenerAttached = true
-            CameraFeature.setFrameOutputListener { frame ->
-                StreamPipelineMetrics.recordCameraArrival()
-                Log.d(
-                    TAG,
-                    "tsMs=${System.currentTimeMillis()} milestone=frame queued to video encoder size=${frame.i420Data.size} ptsUs=${frame.timestampNs / 1_000L}",
-                )
-                enqueueCameraFrame(frame)
-            }
-            frameOutputListenerAttached = true
             val videoStarted: Result<Unit> = VideoEncoderNode.start()
             if (videoStarted.isFailure) {
+                CameraFeature.setFrameOutputListener(null)
+                frameOutputListenerAttached = false
+                videoStartupGraceActive = false
+                deferredStopDuringGrace = false
                 stopRelayWorkers()
                 return StartResult(isReady = false, error = VideoEncoderNode.error())
             }
@@ -227,6 +314,8 @@ object CaptureCoordinator {
             CameraFeature.setFrameOutputListener(null)
             videoOutputListenerAttached = false
             frameOutputListenerAttached = false
+            videoStartupGraceActive = false
+            deferredStopDuringGrace = false
         }
 
         if (streamMode != StreamPathMode.VideoOnly) {
@@ -236,6 +325,10 @@ object CaptureCoordinator {
             audioOutputListenerAttached = true
             val audioStarted: Result<Unit> = AudioEncoderNode.start()
             if (audioStarted.isFailure) {
+                CameraFeature.setFrameOutputListener(null)
+                frameOutputListenerAttached = false
+                videoStartupGraceActive = false
+                deferredStopDuringGrace = false
                 stopRelayWorkers()
                 return StartResult(isReady = false, error = AudioEncoderNode.error())
             }
@@ -244,20 +337,52 @@ object CaptureCoordinator {
             audioOutputListenerAttached = false
         }
 
+        Log.i(
+            TAG,
+            "tsMs=${System.currentTimeMillis()} milestone=stream-start transition=ready mode=$streamMode",
+        )
         return StartResult(isReady = true)
     }
 
     fun stopCapturePathSession() {
+        stopCapturePathSession(forceStop = false, reason = "default")
+    }
+
+    fun stopCapturePathSession(forceStop: Boolean, reason: String) {
+        if (videoStartupGraceActive && !forceStop) {
+            deferredStopDuringGrace = true
+            Log.i(
+                TAG,
+                "tsMs=${System.currentTimeMillis()} milestone=stream-stop deferred reason=$reason graceActive=true",
+            )
+            return
+        }
+
+        videoStartupGraceActive = false
+        deferredStopDuringGrace = false
+
+        Log.i(
+            TAG,
+            "tsMs=${System.currentTimeMillis()} milestone=stream-stop transition=begin reason=$reason force=$forceStop",
+        )
         CameraFeature.setFrameOutputListener(null)
         VideoEncoderNode.setOutputListener(null)
         AudioEncoderNode.setOutputListener(null)
         frameOutputListenerAttached = false
         videoOutputListenerAttached = false
         audioOutputListenerAttached = false
+        videoStartupGraceActive = false
+        firstVideoFrameObserved = false
+        deferredStopDuringGrace = false
         capturePathActive = false
         stopRelayWorkers()
         VideoEncoderNode.stop()
         AudioEncoderNode.stop()
+        CameraFeature.stopStreamCapturePipeline()
+        Log.i(
+            TAG,
+            "tsMs=${System.currentTimeMillis()} milestone=stream-stop transition=complete reason=$reason",
+        )
     }
 
     private fun enqueueCameraFrame(frame: CameraFeature.FramePacket) {

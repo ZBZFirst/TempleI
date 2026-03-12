@@ -47,7 +47,7 @@ class StreamSessionService : Service() {
 
                     val contractStatus = CaptureCoordinator.contractStatus(config.streamMode)
                     if (!contractStatus.ready) {
-                        CaptureCoordinator.stopCapturePathSession()
+                        CaptureCoordinator.stopCapturePathSession(forceStop = true, reason = "capture-contract-failed")
                         return ExportFeature.markFault("capture contract failed: ${contractStatus.reason}")
                     }
 
@@ -61,7 +61,7 @@ class StreamSessionService : Service() {
                         -> false
                     }
                     if (needsMicrophone && !hasRecordAudioPermission()) {
-                        CaptureCoordinator.stopCapturePathSession()
+                        CaptureCoordinator.stopCapturePathSession(forceStop = true, reason = "microphone-permission-missing")
                         return ExportFeature.markFault("microphone permission required for selected stream mode")
                     }
 
@@ -69,12 +69,12 @@ class StreamSessionService : Service() {
                     val streamResult = ExportFeature.startStream(config)
                     if (streamResult.state != ExportFeature.SessionState.Streaming) {
                         // Keep capture/session teardown symmetric when transport start fails.
-                        CaptureCoordinator.stopCapturePathSession()
+                        CaptureCoordinator.stopCapturePathSession(forceStop = true, reason = "transport-start-failed")
                         stopForegroundSession()
                     }
                     streamResult
                 }.getOrElse { error ->
-                    CaptureCoordinator.stopCapturePathSession()
+                    CaptureCoordinator.stopCapturePathSession(forceStop = true, reason = "start-session-exception")
                     stopForegroundSession()
                     ExportFeature.markFault(
                         startSessionFailureMessage(
@@ -87,7 +87,7 @@ class StreamSessionService : Service() {
         }
 
         fun stopSession(): ExportFeature.StreamResult {
-            CaptureCoordinator.stopCapturePathSession()
+            CaptureCoordinator.stopCapturePathSession(forceStop = false, reason = "explicit-stop")
             val result = ExportFeature.stopStream()
             stopForegroundSession()
             return result
