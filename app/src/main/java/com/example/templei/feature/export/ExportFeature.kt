@@ -11,8 +11,7 @@ import android.util.Log
  * TODO: Replace contract nodes with native MPEG-TS mux + SRT sender integration.
  */
 object ExportFeature {
-    private const val STREAM_TAG = "TempleI-Stream"
-    private const val ERROR_TAG = "TempleI-Error"
+    private const val TAG = "TempleI-ExportFeature"
     enum class SessionState {
         Idle,
         Ready,
@@ -186,7 +185,6 @@ object ExportFeature {
     }
 
     fun startStream(config: ObsStreamConfig): StreamResult {
-        Log.i(STREAM_TAG, "tsMs=${System.currentTimeMillis()} milestone=startStream pressed state=$sessionState")
         if (sessionState == SessionState.Streaming || sessionState == SessionState.Starting) {
             return StreamResult(state = sessionState)
         }
@@ -199,14 +197,12 @@ object ExportFeature {
         }
 
         sessionState = SessionState.Starting
-        Log.i(STREAM_TAG, "tsMs=${System.currentTimeMillis()} milestone=pipeline initialized mode=${config.streamMode}")
         StreamPipelineMetrics.reset()
         NativeStreamBackends.resetIngressRuntimeStats()
         lastDiagnosticSummary = "diagnostics pending"
         lastDiagnosticAtMs = 0
         val started = transportGateway.startStream(config.toTransportEndpointSpec(), config.streamMode)
         return if (started.isSuccess) {
-            Log.i(STREAM_TAG, "tsMs=${System.currentTimeMillis()} milestone=encoders started")
             val runtimeHealth = runtimeHealthSnapshot()
             if (!runtimeHealth.runtimeActive) {
                 sessionState = SessionState.Faulted
@@ -217,7 +213,6 @@ object ExportFeature {
                 }
                 lastError = "start blocked: $remediation"
                 lastConnectionTest = "connection failed: $remediation"
-                Log.e(ERROR_TAG, "tsMs=${System.currentTimeMillis()} stream-start-faulted reason=$lastError")
                 transportGateway.stopStream()
                 StreamResult(state = sessionState, error = lastError)
             } else {
@@ -225,14 +220,12 @@ object ExportFeature {
                 lastError = ""
                 lastEffectiveTransportUrl = config.toTransportEndpointSpec().toSrtUrl()
                 lastConnectionTest = "CONNECTION SUCCESSFUL: SRT caller connected to OBS listener"
-                Log.i(STREAM_TAG, "tsMs=${System.currentTimeMillis()} milestone=stream started url=$lastEffectiveTransportUrl")
                 StreamResult(state = sessionState)
             }
         } else {
             sessionState = SessionState.Faulted
             lastError = "start transport failed: ${started.exceptionOrNull()?.message.orEmpty()}"
             lastConnectionTest = "connection failed: ${started.exceptionOrNull()?.message.orEmpty()}"
-            Log.e(ERROR_TAG, "tsMs=${System.currentTimeMillis()} stream-start-failed reason=$lastError")
             StreamResult(state = sessionState, error = lastError)
         }
     }
@@ -244,12 +237,10 @@ object ExportFeature {
             sessionState = SessionState.Idle
             lastDiagnosticSummary = "diagnostics pending"
             lastDiagnosticAtMs = 0
-            Log.i(STREAM_TAG, "tsMs=${System.currentTimeMillis()} milestone=stream stopped")
             StreamResult(state = sessionState)
         } else {
             sessionState = SessionState.Faulted
             lastError = stopped.exceptionOrNull()?.message.orEmpty()
-            Log.e(ERROR_TAG, "tsMs=${System.currentTimeMillis()} stream-stop-failed reason=$lastError")
             StreamResult(state = sessionState, error = lastError)
         }
     }
@@ -288,7 +279,7 @@ object ExportFeature {
         val headerWritten = parseBooleanField(backendDiagnostics, "headerWritten")
         val trailerWritten = parseBooleanField(backendDiagnostics, "trailerWritten")
         val stageDiagnostics = refreshDiagnosticsSnapshotIfDue(nowMs)
-        val adbFilter = "TempleI-Stream:V TempleI-VideoEnc:V TempleI-AudioEnc:V TempleI-Mux:V TempleI-SRT:V TempleI-Net:V TempleI-Error:V *:S"
+        val adbFilter = "TempleI-ExportFeature:V TsMuxerNode:V SrtTransportNode:V NativeStreamBackend:V VideoEncoderNode:V AudioEncoderNode:V *:S"
         val adbCaptureCommand = "adb logcat -v time $adbFilter | head -n 200 > startup-$runId.log"
 
         val content = buildString {
@@ -522,7 +513,7 @@ object ExportFeature {
         val signature = "${stageGate.firstFailedStage}:${stageGate.reasonCode}:${stageGate.summary}"
         if (signature != lastStageGateSignature) {
             lastStageGateSignature = signature
-            Log.i(STREAM_TAG, "tsMs=${System.currentTimeMillis()} interop stage gate update: $signature")
+            Log.i(TAG, "interop stage gate update: $signature")
         }
     }
 

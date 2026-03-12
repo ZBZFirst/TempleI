@@ -94,7 +94,7 @@ object VideoEncoderNode {
                 configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
                 start()
             }
-            Log.i(TAG, "tsMs=${System.currentTimeMillis()} milestone=codec selected mime=$MIME_TYPE width=${activeConfig.width} height=${activeConfig.height} fps=${activeConfig.fps} bitrate=${activeConfig.bitrate}")
+            Log.i(TAG, "codec-start mime=$MIME_TYPE width=${activeConfig.width} height=${activeConfig.height} fps=${activeConfig.fps} bitrate=${activeConfig.bitrate}")
             nodeState = NodeState.Running
             drainOutput()
         }.onFailure {
@@ -244,18 +244,18 @@ object VideoEncoderNode {
                             if (containsPps) ppsSeen = true
                             if (containsIdr && !firstIdrSeen) {
                                 firstIdrSeen = true
-                                Log.i(TAG, "tsMs=${System.currentTimeMillis()} milestone=keyframe detected frame=$encodedAccessUnitCount ptsUs=${bufferInfo.presentationTimeUs} bytes=${accessUnitWithConfig.size} spsSeen=$spsSeen ppsSeen=$ppsSeen")
+                                Log.i(TAG, "first-idr-delivered ptsUs=${bufferInfo.presentationTimeUs} bytes=${accessUnitWithConfig.size} spsSeen=$spsSeen ppsSeen=$ppsSeen")
                             }
                             if (shouldLogEncodedAuEvent(encodedAccessUnitCount)) {
-                                Log.d(
+                                Log.i(
                                     TAG,
-                                    "tsMs=${System.currentTimeMillis()} video-au-summary frame=$encodedAccessUnitCount keyframes=$keyFrameCount lastPtsUs=$lastVideoPresentationTimeUs",
+                                    "video-au-summary encodedAu=$encodedAccessUnitCount keyframes=$keyFrameCount lastPtsUs=$lastVideoPresentationTimeUs",
                                 )
                             }
                             if (firstOutputLogs < 5) {
-                                Log.d(
+                                Log.i(
                                     TAG,
-                                    "tsMs=${System.currentTimeMillis()} milestone=encoded frame size frame=${encodedAccessUnitCount} bytes=${accessUnitWithConfig.size} flags=${bufferInfo.flags} " +
+                                    "h264-buffer[${firstOutputLogs + 1}] size=${accessUnitWithConfig.size} flags=${bufferInfo.flags} " +
                                         "key=$keyFrame annexB=$annexB first16=${toHex(accessUnitWithConfig, 16)}",
                                 )
                                 firstOutputLogs += 1
@@ -271,7 +271,7 @@ object VideoEncoderNode {
     private fun emitCodecConfig(format: MediaFormat) {
         val csd0 = format.getByteBuffer("csd-0")
         val csd1 = format.getByteBuffer("csd-1")
-        Log.i(TAG, "tsMs=${System.currentTimeMillis()} milestone=output format received mime=${format.getString(MediaFormat.KEY_MIME)} hasCsd0=${csd0 != null} hasCsd1=${csd1 != null}")
+        Log.i(TAG, "codec-format mime=${format.getString(MediaFormat.KEY_MIME)} hasCsd0=${csd0 != null} hasCsd1=${csd1 != null}")
         val configPayload = mergeAnnexB(csd0, csd1)
         if (configPayload.isEmpty()) {
             return
