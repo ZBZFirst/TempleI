@@ -6,261 +6,263 @@
     android:orientation="vertical">
 
     <!-- Embeddable OBS SRT ingest configuration and control surface. -->
-<ScrollView
-            android:id="@+id/buttonScrollArea"
+    <LinearLayout
+        android:id="@+id/streamPlanSection"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="24dp"
+        android:layout_marginTop="24dp"
+        android:layout_marginEnd="24dp"
+        android:layout_marginBottom="16dp"
+        android:background="@color/debug_warning"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <TextView
+            android:id="@+id/streamPlanTitle"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginStart="24dp"
-            android:layout_marginTop="24dp"
-            android:layout_marginEnd="24dp"
-            android:layout_marginBottom="24dp">
+            android:text="@string/obs_section_a_title"
+            android:textSize="20sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/streamPlanSummary"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="@string/obs_section_a_summary" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/defineEndpointButton"
+                android:layout_width="0dp"
+                android:layout_height="96dp"
+                android:layout_weight="1"
+                android:text="@string/obs_button_edit_host" />
+
+            <Space
+                android:layout_width="12dp"
+                android:layout_height="wrap_content" />
+
+            <Button
+                android:id="@+id/defineTransportButton"
+                android:layout_width="0dp"
+                android:layout_height="96dp"
+                android:layout_weight="1"
+                android:text="@string/obs_button_edit_port" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/defineMuxingButton"
+                android:layout_width="0dp"
+                android:layout_height="96dp"
+                android:layout_weight="1"
+                android:text="@string/obs_button_validate_test" />
+
+            <Space
+                android:layout_width="12dp"
+                android:layout_height="wrap_content" />
+
+            <Button
+                android:id="@+id/defineRecoveryButton"
+                android:layout_width="0dp"
+                android:layout_height="96dp"
+                android:layout_weight="1"
+                android:text="@string/obs_button_preset_reset" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <ScrollView
+        android:id="@+id/buttonScrollArea"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_marginStart="24dp"
+        android:layout_marginEnd="24dp"
+        android:layout_marginBottom="24dp"
+        android:layout_weight="1">
+
+        <LinearLayout
+            android:id="@+id/sectionStack"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
 
             <LinearLayout
-                android:id="@+id/sectionStack"
+                android:id="@+id/statePlanSection"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="vertical">
+                android:layout_marginBottom="24dp"
+                android:background="@color/debug_warning"
+                android:orientation="vertical"
+                android:padding="16dp">
 
-                <!-- Section A: endpoint setup + validation. -->
-                <LinearLayout
-                    android:id="@+id/streamPlanSection"
+                <TextView
+                    android:id="@+id/statePlanTitle"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginBottom="24dp"
-                    android:background="@color/debug_warning"
-                    android:orientation="vertical"
-                    android:padding="16dp">
+                    android:text="@string/obs_section_b_title"
+                    android:textSize="20sp"
+                    android:textStyle="bold" />
 
-                    <TextView
-                        android:id="@+id/streamPlanTitle"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:text="@string/obs_section_a_title"
-                        android:textSize="20sp"
-                        android:textStyle="bold" />
-
-                    <TextView
-                        android:id="@+id/streamPlanSummary"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="8dp"
-                        android:text="@string/obs_section_a_summary" />
-
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="16dp"
-                        android:orientation="horizontal">
-
-                        <Button
-                            android:id="@+id/defineEndpointButton"
-                            android:layout_width="0dp"
-                            android:layout_height="96dp"
-                            android:layout_weight="1"
-                            android:text="@string/obs_button_edit_host" />
-
-                        <Space
-                            android:layout_width="12dp"
-                            android:layout_height="wrap_content" />
-
-                        <Button
-                            android:id="@+id/defineTransportButton"
-                            android:layout_width="0dp"
-                            android:layout_height="96dp"
-                            android:layout_weight="1"
-                            android:text="@string/obs_button_edit_port" />
-                    </LinearLayout>
-
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="12dp"
-                        android:orientation="horizontal">
-
-                        <Button
-                            android:id="@+id/defineMuxingButton"
-                            android:layout_width="0dp"
-                            android:layout_height="96dp"
-                            android:layout_weight="1"
-                            android:text="@string/obs_button_validate_test" />
-
-                        <Space
-                            android:layout_width="12dp"
-                            android:layout_height="wrap_content" />
-
-                        <Button
-                            android:id="@+id/defineRecoveryButton"
-                            android:layout_width="0dp"
-                            android:layout_height="96dp"
-                            android:layout_weight="1"
-                            android:text="@string/obs_button_preset_reset" />
-                    </LinearLayout>
-                </LinearLayout>
-
-                <LinearLayout
-                    android:id="@+id/statePlanSection"
+                <TextView
+                    android:id="@+id/statePlanSummary"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginBottom="24dp"
-                    android:background="@color/debug_warning"
-                    android:orientation="vertical"
-                    android:padding="16dp">
+                    android:layout_marginTop="8dp"
+                    android:text="@string/obs_section_b_summary" />
 
-                    <TextView
-                        android:id="@+id/statePlanTitle"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:text="@string/obs_section_b_title"
-                        android:textSize="20sp"
-                        android:textStyle="bold" />
-
-                    <TextView
-                        android:id="@+id/statePlanSummary"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="8dp"
-                        android:text="@string/obs_section_b_summary" />
-
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="16dp"
-                        android:orientation="horizontal">
-
-                        <Button
-                            android:id="@+id/setupStateMachineButton"
-                            android:layout_width="0dp"
-                            android:layout_height="96dp"
-                            android:layout_weight="1"
-                            android:text="@string/obs_button_show_input" />
-
-                        <Space
-                            android:layout_width="12dp"
-                            android:layout_height="wrap_content" />
-
-                        <Button
-                            android:id="@+id/setupFailureDomainsButton"
-                            android:layout_width="0dp"
-                            android:layout_height="96dp"
-                            android:layout_weight="1"
-                            android:text="@string/obs_button_toggle_profile" />
-                    </LinearLayout>
-
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="12dp"
-                        android:orientation="horizontal">
-
-                        <Button
-                            android:id="@+id/setupContractsButton"
-                            android:layout_width="0dp"
-                            android:layout_height="96dp"
-                            android:layout_weight="1"
-                            android:text="@string/obs_button_start_stream" />
-
-                        <Space
-                            android:layout_width="12dp"
-                            android:layout_height="wrap_content" />
-
-                        <Button
-                            android:id="@+id/setupImplementationMapButton"
-                            android:layout_width="0dp"
-                            android:layout_height="96dp"
-                            android:layout_weight="1"
-                            android:text="@string/obs_button_stop_stream" />
-                    </LinearLayout>
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="16dp"
+                    android:orientation="horizontal">
 
                     <Button
-                        android:id="@+id/copyDiagnosticsButton"
-                        android:layout_width="match_parent"
-                        android:layout_height="72dp"
-                        android:layout_marginTop="12dp"
-                        android:text="@string/obs_button_copy_diagnostics" />
+                        android:id="@+id/setupStateMachineButton"
+                        android:layout_width="0dp"
+                        android:layout_height="96dp"
+                        android:layout_weight="1"
+                        android:text="@string/obs_button_show_input" />
+
+                    <Space
+                        android:layout_width="12dp"
+                        android:layout_height="wrap_content" />
+
+                    <Button
+                        android:id="@+id/setupFailureDomainsButton"
+                        android:layout_width="0dp"
+                        android:layout_height="96dp"
+                        android:layout_weight="1"
+                        android:text="@string/obs_button_toggle_profile" />
                 </LinearLayout>
 
-                <!-- OBS setup outputs required by workflow contract. -->
                 <LinearLayout
-                    android:id="@+id/obsOutputSection"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginBottom="24dp"
-                    android:background="@color/debug_warning"
-                    android:orientation="vertical"
-                    android:padding="16dp">
+                    android:layout_marginTop="12dp"
+                    android:orientation="horizontal">
 
-                    <TextView
-                        android:id="@+id/obsSummaryTitle"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:text="@string/obs_setup_summary_title"
-                        android:textStyle="bold" />
+                    <Button
+                        android:id="@+id/setupContractsButton"
+                        android:layout_width="0dp"
+                        android:layout_height="96dp"
+                        android:layout_weight="1"
+                        android:text="@string/obs_button_start_stream" />
 
-                    <TextView
-                        android:id="@+id/obsSetupSummaryText"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="8dp"
-                        android:text="@string/obs_setup_summary_placeholder" />
+                    <Space
+                        android:layout_width="12dp"
+                        android:layout_height="wrap_content" />
 
-                    <TextView
-                        android:id="@+id/sessionStateText"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="12dp"
-                        android:text="@string/obs_session_state_placeholder" />
-
-                    <TextView
-                        android:id="@+id/validationResultText"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="8dp"
-                        android:text="@string/obs_validation_placeholder" />
-
-                    <TextView
-                        android:id="@+id/connectionResultText"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="8dp"
-                        android:text="@string/obs_connection_placeholder" />
-
-                    <TextView
-                        android:id="@+id/lastErrorText"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="8dp"
-                        android:text="@string/obs_last_error_placeholder" />
-
-                    <TextView
-                        android:id="@+id/interopStatusText"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="8dp"
-                        android:text="@string/obs_interop_placeholder" />
-
-                    <TextView
-                        android:id="@+id/runtimeHealthText"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="8dp"
-                        android:text="@string/obs_runtime_health_placeholder" />
-
-                    <TextView
-                        android:id="@+id/lastEffectiveUrlText"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="8dp"
-                        android:text="@string/obs_last_effective_url_placeholder" />
-
-                    <TextView
-                        android:id="@+id/startupProgressText"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="8dp"
-                        android:text="@string/obs_startup_progress_placeholder" />
+                    <Button
+                        android:id="@+id/setupImplementationMapButton"
+                        android:layout_width="0dp"
+                        android:layout_height="96dp"
+                        android:layout_weight="1"
+                        android:text="@string/obs_button_stop_stream" />
                 </LinearLayout>
 
+                <Button
+                    android:id="@+id/copyDiagnosticsButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="72dp"
+                    android:layout_marginTop="12dp"
+                    android:text="@string/obs_button_copy_diagnostics" />
             </LinearLayout>
-        </ScrollView>
+
+            <!-- OBS setup outputs required by workflow contract. -->
+            <LinearLayout
+                android:id="@+id/obsOutputSection"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="24dp"
+                android:background="@color/debug_warning"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <TextView
+                    android:id="@+id/obsSummaryTitle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/obs_setup_summary_title"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/obsSetupSummaryText"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="@string/obs_setup_summary_placeholder" />
+
+                <TextView
+                    android:id="@+id/sessionStateText"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:text="@string/obs_session_state_placeholder" />
+
+                <TextView
+                    android:id="@+id/validationResultText"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="@string/obs_validation_placeholder" />
+
+                <TextView
+                    android:id="@+id/connectionResultText"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="@string/obs_connection_placeholder" />
+
+                <TextView
+                    android:id="@+id/lastErrorText"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="@string/obs_last_error_placeholder" />
+
+                <TextView
+                    android:id="@+id/interopStatusText"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="@string/obs_interop_placeholder" />
+
+                <TextView
+                    android:id="@+id/runtimeHealthText"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="@string/obs_runtime_health_placeholder" />
+
+                <TextView
+                    android:id="@+id/lastEffectiveUrlText"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="@string/obs_last_effective_url_placeholder" />
+
+                <TextView
+                    android:id="@+id/startupProgressText"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="@string/obs_startup_progress_placeholder" />
+            </LinearLayout>
+
+        </LinearLayout>
+    </ScrollView>
 
 </LinearLayout>

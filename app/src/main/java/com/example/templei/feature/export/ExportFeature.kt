@@ -34,9 +34,16 @@ object ExportFeature {
         val message: String,
     )
 
+    data class StreamError(
+        val code: String,
+        val message: String,
+        val failureReport: StreamFailureReport? = null,
+    )
+
     data class StreamResult(
         val state: SessionState,
         val error: String? = null,
+        val detail: StreamError? = null,
     )
 
     data class EndpointValidationSnapshot(
@@ -68,8 +75,11 @@ object ExportFeature {
     private const val DEFAULT_PORT = 9000
     private const val PROFILE_BALANCED = "Balanced"
 
+    private val stateMachine = StreamSessionStateMachine()
+
     private var sessionState: SessionState = SessionState.Idle
     private var lastError: String = ""
+    private var lastFailureReport: StreamFailureReport? = null
     private var lastValidation: String = "Not validated"
     private var lastConnectionTest: String = "Not tested"
     private var lastDiagnosticSummary: String = "diagnostics pending"
@@ -87,6 +97,28 @@ object ExportFeature {
     private var lastStageGateSignature: String = ""
 
     private val transportGateway: StreamTransportGateway = DefaultTransportGateway
+
+    private fun syncSessionStateFromMachine() {
+        sessionState = when (stateMachine.currentState()) {
+            StreamSessionStateMachine.State.IDLE -> SessionState.Idle
+            StreamSessionStateMachine.State.PREVIEW_READY -> SessionState.Ready
+            StreamSessionStateMachine.State.STREAM_INITIALIZING -> SessionState.Starting
+            StreamSessionStateMachine.State.STREAM_ACTIVE -> SessionState.Streaming
+            StreamSessionStateMachine.State.STREAM_FAILED -> SessionState.Faulted
+            StreamSessionStateMachine.State.STREAM_STOPPING -> SessionState.Stopping
+        }
+    }
+
+    private fun transition(event: StreamSessionStateMachine.Event) {
+        stateMachine.transition(event)
+        syncSessionStateFromMachine()
+    }
+
+    private fun structuredError(code: String, message: String): StreamError {
+        val report = StreamFailureReport.capture(message)
+        lastFailureReport = report
+        return StreamError(code = code, message = message, failureReport = report)
+    }
 
     fun loadConfig(context: Context): ObsStreamConfig {
         val prefs = context.preferences()
@@ -117,7 +149,7 @@ object ExportFeature {
     fun resetConfig(context: Context): ObsStreamConfig {
         val reset = ObsStreamConfig()
         saveConfig(context, reset)
-        sessionState = SessionState.Idle
+        transition(StreamSessionStateMachine.Event.Reset)
         lastError = ""
         lastValidation = "Reset to default OBS preset"
         lastConnectionTest = "Not tested"
@@ -166,7 +198,7 @@ object ExportFeature {
             else -> ValidationResult(true, "ready")
         }
 
-        sessionState = if (result.isValid) SessionState.Ready else SessionState.Idle
+        transition(if (result.isValid) StreamSessionStateMachine.Event.PreviewBound else StreamSessionStateMachine.Event.Reset)
         lastValidation = result.message
         if (!result.isValid) {
             lastError = result.message
@@ -193,20 +225,28 @@ object ExportFeature {
 
         val preflightMessage = preflightStartMessage(config)
         if (preflightMessage != null) {
-            sessionState = SessionState.Faulted
+            transition(StreamSessionStateMachine.Event.StartFailed(preflightMessage))
             lastError = preflightMessage
-            return StreamResult(state = sessionState, error = lastError)
+            val detail = structuredError("preflight_failed", preflightMessage)
+            return StreamResult(state = sessionState, error = lastError, detail = detail)
         }
 
-        sessionState = SessionState.Starting
+        transition(StreamSessionStateMachine.Event.StartRequested)
         Log.i(STREAM_TAG, "tsMs=${System.currentTimeMillis()} milestone=encoders starting")
         Log.i(STREAM_TAG, "tsMs=${System.currentTimeMillis()} milestone=pipeline initialized mode=${config.streamMode}")
         StreamPipelineMetrics.reset()
         NativeStreamBackends.resetIngressRuntimeStats()
         lastDiagnosticSummary = "diagnostics pending"
         lastDiagnosticAtMs = 0
-        val started = transportGateway.startStream(config.toTransportEndpointSpec(), config.streamMode)
+
+        val started = runCatching {
+            transportGateway.startStream(config.toTransportEndpointSpec(), config.streamMode)
+        }.getOrElse { throwable ->
+            Result.failure(IllegalStateException("transport start invocation failed: ${throwable.message.orEmpty()}"))
+        }
+
         return if (started.isSuccess) {
+            transition(StreamSessionStateMachine.Event.StartSucceeded)
             Log.i(STREAM_TAG, "tsMs=${System.currentTimeMillis()} milestone=encoders started")
             val runtimeHealth = runtimeHealthSnapshot()
             if (!runtimeHealth.runtimeActive) {
@@ -215,43 +255,50 @@ object ExportFeature {
                     "tsMs=${System.currentTimeMillis()} runtime gate bypassed after successful native start runtimeMode=${runtimeHealth.runtimeMode}",
                 )
             }
-            sessionState = SessionState.Streaming
             lastError = ""
+            lastFailureReport = null
             lastEffectiveTransportUrl = config.toTransportEndpointSpec().toSrtUrl()
             lastConnectionTest = "CONNECTION SUCCESSFUL: SRT caller connected to OBS listener"
             Log.i(STREAM_TAG, "tsMs=${System.currentTimeMillis()} milestone=stream started url=$lastEffectiveTransportUrl")
             StreamResult(state = sessionState)
         } else {
-            sessionState = SessionState.Faulted
-            lastError = "start transport failed: ${started.exceptionOrNull()?.message.orEmpty()}"
+            val message = "start transport failed: ${started.exceptionOrNull()?.message.orEmpty()}"
+            transition(StreamSessionStateMachine.Event.StartFailed(message))
+            lastError = message
             lastConnectionTest = "connection failed: ${started.exceptionOrNull()?.message.orEmpty()}"
             Log.e(ERROR_TAG, "tsMs=${System.currentTimeMillis()} stream-start-failed reason=$lastError")
-            StreamResult(state = sessionState, error = lastError)
+            val detail = structuredError("start_failed", message)
+            StreamResult(state = sessionState, error = lastError, detail = detail)
         }
     }
 
     fun stopStream(): StreamResult {
-        sessionState = SessionState.Stopping
-        val stopped = transportGateway.stopStream()
+        transition(StreamSessionStateMachine.Event.StopRequested)
+        val stopped = runCatching { transportGateway.stopStream() }
+            .getOrElse { throwable -> Result.failure(IllegalStateException("transport stop invocation failed: ${throwable.message.orEmpty()}")) }
         return if (stopped.isSuccess) {
-            sessionState = SessionState.Idle
+            transition(StreamSessionStateMachine.Event.StopSucceeded)
+            lastFailureReport = null
             lastDiagnosticSummary = "diagnostics pending"
             lastDiagnosticAtMs = 0
             Log.i(STREAM_TAG, "tsMs=${System.currentTimeMillis()} milestone=stream stopped")
             StreamResult(state = sessionState)
         } else {
-            sessionState = SessionState.Faulted
-            lastError = stopped.exceptionOrNull()?.message.orEmpty()
+            val message = stopped.exceptionOrNull()?.message.orEmpty()
+            transition(StreamSessionStateMachine.Event.StopFailed(message))
+            lastError = message
             Log.e(ERROR_TAG, "tsMs=${System.currentTimeMillis()} stream-stop-failed reason=$lastError")
-            StreamResult(state = sessionState, error = lastError)
+            val detail = structuredError("stop_failed", message)
+            StreamResult(state = sessionState, error = lastError, detail = detail)
         }
     }
 
 
     fun markFault(message: String): StreamResult {
-        sessionState = SessionState.Faulted
+        transition(StreamSessionStateMachine.Event.StartFailed(message))
         lastError = message
-        return StreamResult(state = sessionState, error = lastError)
+        val detail = structuredError("marked_fault", message)
+        return StreamResult(state = sessionState, error = lastError, detail = detail)
     }
 
     fun currentState(): SessionState = sessionState
@@ -263,6 +310,8 @@ object ExportFeature {
     fun lastConnectionTest(): String = lastConnectionTest
 
     fun lastEffectiveTransportUrl(): String = lastEffectiveTransportUrl
+
+    fun lastFailureReport(): StreamFailureReport? = lastFailureReport
 
     fun runtimeHealthSnapshot(): RuntimeHealthSnapshot {
         return parseRuntimeHealthSnapshot(transportGateway.diagnosticsSummary())
@@ -421,96 +470,6 @@ object ExportFeature {
     }
 
 
-
-    private fun deriveMediaIngressStatus(
-        config: ObsStreamConfig,
-        videoStats: VideoEncoderNode.RuntimeStats,
-        audioStats: AudioEncoderNode.RuntimeStats,
-    ): String {
-        return when (config.streamMode) {
-            CaptureCoordinator.StreamPathMode.ConnectionOnly -> "n/a"
-            CaptureCoordinator.StreamPathMode.VideoOnly -> if (videoStats.encodedAccessUnitCount > 0) "flowing" else "stalled"
-            CaptureCoordinator.StreamPathMode.AudioOnly -> if (audioStats.encodedAccessUnitCount > 0) "flowing" else "stalled"
-            CaptureCoordinator.StreamPathMode.FullAv -> if (videoStats.encodedAccessUnitCount > 0 && audioStats.encodedAccessUnitCount > 0) "flowing" else "stalled"
-        }
-    }
-
-    private fun derivePacketWriteStatus(backendDiagnostics: String): String {
-        val packets = parsePacketCount(backendDiagnostics)
-        val consecutiveWriteFailures = Regex("""consecutiveWriteFailures=(\d+)""").find(backendDiagnostics)?.groupValues?.get(1)?.toLongOrNull() ?: 0L
-        val outputOpened = parseBooleanField(backendDiagnostics, "outputOpened")
-        val headerWritten = parseBooleanField(backendDiagnostics, "headerWritten")
-        return when {
-            packets > 0L && consecutiveWriteFailures == 0L && outputOpened && headerWritten -> "active"
-            packets == 0L && consecutiveWriteFailures > 0L -> "faulted"
-            else -> "pending"
-        }
-    }
-
-    private fun deriveIngressMismatch(
-        streamMode: CaptureCoordinator.StreamPathMode,
-        videoEncodedAu: Long,
-        audioEncodedAu: Long,
-        videoIngressCalls: Long,
-        audioIngressCalls: Long,
-    ): String {
-        return when (streamMode) {
-            CaptureCoordinator.StreamPathMode.ConnectionOnly -> "none"
-            CaptureCoordinator.StreamPathMode.VideoOnly -> if (videoEncodedAu > 0L && videoIngressCalls == 0L) "video-unmapped" else "none"
-            CaptureCoordinator.StreamPathMode.AudioOnly -> if (audioEncodedAu > 0L && audioIngressCalls == 0L) "audio-unmapped" else "none"
-            CaptureCoordinator.StreamPathMode.FullAv -> when {
-                videoEncodedAu > 0L && videoIngressCalls == 0L -> "video-unmapped"
-                audioEncodedAu > 0L && audioIngressCalls == 0L -> "audio-unmapped"
-                else -> "none"
-            }
-        }
-    }
-
-    private fun deriveQueuePressure(
-        cameraQueueDepth: Int,
-        encoderQueueDepth: Int,
-        cameraDropCount: Long,
-        encoderDropCount: Long,
-    ): String {
-        return when {
-            cameraDropCount > 0L || encoderDropCount > 0L -> "drop"
-            cameraQueueDepth >= CAMERA_QUEUE_WARN_DEPTH || encoderQueueDepth >= ENCODER_QUEUE_WARN_DEPTH -> "backlog"
-            else -> "none"
-        }
-    }
-
-    internal fun derivePacketWriteWarning(
-        muxVideoIngest: Long,
-        muxAudioIngest: Long,
-        packetCount: Long,
-        warnThreshold: Long,
-    ): String {
-        val ingressTotal = muxVideoIngest + muxAudioIngest
-        if (packetCount > 0L) {
-            return "none"
-        }
-        return if (ingressTotal >= warnThreshold) {
-            "ingress-active-without-packets"
-        } else {
-            "warming-up"
-        }
-    }
-
-    private fun parsePacketCount(backendDiagnostics: String): Long {
-        return Regex("""writePacketsSucceeded=(\d+)""").find(backendDiagnostics)?.groupValues?.get(1)?.toLongOrNull()
-            ?: Regex("""packetsWritten=(\d+)""").find(backendDiagnostics)?.groupValues?.get(1)?.toLongOrNull()
-            ?: Regex("""packets=(\d+)""").find(backendDiagnostics)?.groupValues?.get(1)?.toLongOrNull()
-            ?: 0L
-    }
-
-    private fun parseLongField(backendDiagnostics: String, field: String): Long {
-        return Regex("""$field=(\d+)""").find(backendDiagnostics)?.groupValues?.get(1)?.toLongOrNull() ?: 0L
-    }
-
-    private fun parseBooleanField(backendDiagnostics: String, field: String): Boolean {
-        return Regex("""$field=(true|false)""").find(backendDiagnostics)?.groupValues?.get(1)?.toBoolean() ?: false
-    }
-
     private fun logStageGateTransitionIfNeeded(stageGate: InteropStageGate) {
         val signature = "${stageGate.firstFailedStage}:${stageGate.reasonCode}:${stageGate.summary}"
         if (signature != lastStageGateSignature) {
@@ -519,50 +478,7 @@ object ExportFeature {
         }
     }
 
-    private fun deriveConnectionState(backendDiagnostics: String): String {
-        val match = Regex("""connState=([a-zA-Z]+)""").find(backendDiagnostics)
-        return match?.groupValues?.getOrNull(1)?.lowercase() ?: "unknown"
-    }
 
-    internal fun parseRuntimeHealthSnapshot(backendDiagnostics: String): RuntimeHealthSnapshot {
-        val runtimeMode = Regex("""runtime=\{[^}]*runtimeMode=([a-zA-Z_]+)""")
-            .find(backendDiagnostics)
-            ?.groupValues
-            ?.getOrNull(1)
-            ?.lowercase()
-            ?: "unknown"
-        val connectionState = deriveConnectionState(backendDiagnostics)
-        val packetsWritten = parsePacketCount(backendDiagnostics)
-        val lastNativeError = Regex("""lastErr=\{([^}]*)\}""")
-            .find(backendDiagnostics)
-            ?.groupValues
-            ?.getOrNull(1)
-            ?.ifBlank { "none" }
-            ?: "none"
-        val runtimeActive = runtimeMode != "unknown" && runtimeMode != "stub"
-
-        return RuntimeHealthSnapshot(
-            runtimeMode = runtimeMode,
-            connectionState = connectionState,
-            packetsWritten = packetsWritten,
-            lastNativeError = lastNativeError,
-            runtimeActive = runtimeActive,
-        )
-    }
-
-    private fun deriveInteropIssue(backendDiagnostics: String): String {
-        val healthHint = Regex("""healthHint=\{([^}]*)\}""")
-            .find(backendDiagnostics)
-            ?.groupValues
-            ?.getOrNull(1)
-            ?.trim()
-            .orEmpty()
-        if (healthHint.isNotEmpty()) {
-            return healthHint
-        }
-
-        return "none"
-    }
 
     private fun refreshDiagnosticsSnapshotIfDue(nowMs: Long = System.currentTimeMillis()): String {
         if (nowMs - lastDiagnosticAtMs >= DIAGNOSTIC_REFRESH_INTERVAL_MS || lastDiagnosticSummary == "diagnostics pending") {
@@ -654,87 +570,4 @@ object ExportFeature {
     private fun Context.preferences(): SharedPreferences {
         return getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     }
-}
-
-internal data class InteropStageInputs(
-    val streamMode: CaptureCoordinator.StreamPathMode,
-    val cameraFramesEnqueued: Long,
-    val videoEncodedAu: Long,
-    val audioEncodedAu: Long,
-    val videoIngressCalls: Long,
-    val audioIngressCalls: Long,
-    val muxVideoIngest: Long,
-    val muxAudioIngest: Long,
-    val packetCount: Long,
-    val connectionState: String,
-    val packetWriteStatus: String,
-    val interopIssue: String,
-    val queuePressure: String,
-)
-
-internal data class InteropStageGate(
-    val summary: String,
-    val firstFailedStage: String,
-    val reasonCode: String,
-)
-
-internal fun deriveInteropStageGate(inputs: InteropStageInputs): InteropStageGate {
-    val captureOk =
-        inputs.streamMode == CaptureCoordinator.StreamPathMode.AudioOnly ||
-            inputs.streamMode == CaptureCoordinator.StreamPathMode.ConnectionOnly ||
-            inputs.cameraFramesEnqueued > 0
-    val videoEncodeOk =
-        inputs.streamMode == CaptureCoordinator.StreamPathMode.AudioOnly ||
-            inputs.streamMode == CaptureCoordinator.StreamPathMode.ConnectionOnly ||
-            inputs.videoEncodedAu > 0
-    val audioEncodeOk =
-        inputs.streamMode == CaptureCoordinator.StreamPathMode.VideoOnly ||
-            inputs.streamMode == CaptureCoordinator.StreamPathMode.ConnectionOnly ||
-            inputs.audioEncodedAu > 0
-    val nativeIngressOk = when (inputs.streamMode) {
-        CaptureCoordinator.StreamPathMode.ConnectionOnly -> true
-        CaptureCoordinator.StreamPathMode.VideoOnly -> inputs.videoIngressCalls > 0
-        CaptureCoordinator.StreamPathMode.AudioOnly -> inputs.audioIngressCalls > 0
-        CaptureCoordinator.StreamPathMode.FullAv -> inputs.videoIngressCalls > 0 && inputs.audioIngressCalls > 0
-    }
-    val muxWriteOk = inputs.packetCount > 0
-    val transportOk = inputs.connectionState == "connected" && inputs.packetWriteStatus == "active"
-
-    val firstFailedStage = when {
-        !captureOk -> "capture"
-        !videoEncodeOk -> "videoEncode"
-        !audioEncodeOk -> "audioEncode"
-        !nativeIngressOk -> "nativeIngress"
-        !muxWriteOk -> "muxWrite"
-        !transportOk -> "transport"
-        else -> "none"
-    }
-
-    val reasonCode = when {
-        inputs.interopIssue.contains("stubbed", ignoreCase = true) -> "StubRuntime"
-        inputs.queuePressure == "drop" -> "QueueDrop"
-        inputs.queuePressure == "backlog" -> "QueueBacklog"
-        inputs.packetWriteStatus == "faulted" -> "NativeWriteFault"
-        firstFailedStage == "capture" -> "CaptureIdle"
-        firstFailedStage == "videoEncode" -> "VideoEncoderIdle"
-        firstFailedStage == "audioEncode" -> "AudioEncoderIdle"
-        firstFailedStage == "nativeIngress" -> "IngressIdle"
-        firstFailedStage == "muxWrite" -> "MuxWritePending"
-        firstFailedStage == "transport" -> "TransportNotConnected"
-        else -> "None"
-    }
-
-    val summary =
-        "capture=${if (captureOk) "ok" else "pending"}," +
-            "videoEncode=${if (videoEncodeOk) "ok" else "pending"}," +
-            "audioEncode=${if (audioEncodeOk) "ok" else "pending"}," +
-            "nativeIngress=${if (nativeIngressOk) "ok" else "pending"}," +
-            "muxWrite=${if (muxWriteOk) "ok" else "pending"}," +
-            "transport=${if (transportOk) "ok" else "pending"}"
-
-    return InteropStageGate(
-        summary = summary,
-        firstFailedStage = firstFailedStage,
-        reasonCode = reasonCode,
-    )
 }

@@ -36,6 +36,18 @@ object AudioEncoderNode {
         val trackIndex: Int = 1,
     )
 
+
+    data class EncoderDiagnostics(
+        val state: NodeState,
+        val lastError: String,
+        val sampleRate: Int,
+        val channelCount: Int,
+        val bitrate: Int,
+        val captureLoopActive: Boolean,
+        val framesEncoded: Long,
+        val encodedAccessUnitCount: Long,
+    )
+
     private const val MIME_TYPE = MediaFormat.MIMETYPE_AUDIO_AAC
     private const val LOG_FIRST_AU_EVENTS = 5L
     private const val LOG_EVERY_N_AU_EVENTS = 120L
@@ -166,6 +178,21 @@ object AudioEncoderNode {
     fun state(): NodeState = nodeState
 
     fun error(): String = lastError
+
+
+    fun diagnostics(): EncoderDiagnostics {
+        return EncoderDiagnostics(
+            state = nodeState,
+            lastError = lastError,
+            sampleRate = activeConfig.sampleRate,
+            channelCount = activeConfig.channelCount,
+            bitrate = activeConfig.bitrate,
+            captureLoopActive = captureLoopActive,
+            framesEncoded = framesEncoded,
+            encodedAccessUnitCount = encodedAccessUnitCount,
+        )
+    }
+
 
     private fun runAudioCaptureLoop(bufferSize: Int) {
         val activeCodec = codec ?: return
