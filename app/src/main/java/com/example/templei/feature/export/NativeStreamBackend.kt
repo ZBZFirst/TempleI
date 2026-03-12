@@ -219,7 +219,7 @@ private object FfmpegStreamBackend : NativeStreamBackend {
     private const val SRT_TAG = "TempleI-SRT"
     private const val NET_TAG = "TempleI-Net"
     private const val ERROR_TAG = "TempleI-Error"
-    private const val FFMPEG_NATIVE_LIBRARY = "templei_ffmpeg"
+    private const val FFMPEG_NATIVE_LIBRARY = "templei-native"
     private const val MAX_CONNECT_RETRIES = 3
     private const val CONNECT_RETRY_BACKOFF_MS = 120L
 
@@ -421,6 +421,7 @@ private object FfmpegStreamBackend : NativeStreamBackend {
     private fun loadRuntime(): RuntimeBinding {
         return runCatching {
             System.loadLibrary(FFMPEG_NATIVE_LIBRARY)
+            Log.d(SRT_TAG, "TempleI-SRT native library loaded")
             RuntimeBinding.Loaded(JniRuntime)
         }.getOrElse { error ->
             val reason = error.message ?: error::class.java.simpleName
@@ -451,6 +452,7 @@ private object FfmpegStreamBackend : NativeStreamBackend {
 
     private object JniRuntime : Runtime {
         override fun probeRuntime(): Boolean {
+            Log.d(SRT_TAG, "TempleI-SRT runtime probe invoked")
             return FfmpegNativeBridge.nativeProbeRuntime()
         }
 

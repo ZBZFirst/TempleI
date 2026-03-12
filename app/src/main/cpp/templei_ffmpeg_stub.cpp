@@ -398,6 +398,7 @@ bool write_access_unit_packet(
 
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_example_templei_feature_export_FfmpegNativeBridge_nativeProbeRuntime(JNIEnv*, jobject) {
+    __android_log_print(ANDROID_LOG_DEBUG, kSrtTag, "TempleI-SRT runtime probe invoked");
     refresh_runtime_info();
     return avformat_version() > 0 ? JNI_TRUE : JNI_FALSE;
 }
@@ -735,7 +736,8 @@ Java_com_example_templei_feature_export_FfmpegNativeBridge_nativeLastError(JNIEn
 }
 
 extern "C" JNIEXPORT jstring JNICALL
-Java_com_example_templei_feature_export_FfmpegNativeBridge_nativeRuntimeInfo(JNIEnv* env, jobject) {
+Java_com_example_templei_feature_export_FfmpegNativeBridge_nativeRuntimeInfo(JNIEnv* env, jobject thiz) {
+    __android_log_print(ANDROID_LOG_DEBUG, kSrtTag, "TempleI-SRT nativeRuntimeInfo JNI resolved");
     return env->NewStringUTF(g_runtime_info.c_str());
 }
 
