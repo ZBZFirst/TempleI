@@ -127,10 +127,11 @@ object AudioEncoderNode {
             }
 
             captureLoopActive = true
+            nodeState = NodeState.Running
+            Log.i(TAG, "tsMs=${System.currentTimeMillis()} milestone=encoders started component=audio")
             captureThread = thread(name = "TempleI-AacCapture") {
                 runAudioCaptureLoop(minBuffer)
             }
-            nodeState = NodeState.Running
         }.onFailure {
             nodeState = NodeState.Faulted
             lastError = "audio encoder start failed: ${it.message.orEmpty()}"
@@ -203,6 +204,10 @@ object AudioEncoderNode {
 
                 else -> {
                     if (outputIndex >= 0) {
+                        Log.d(
+                            TAG,
+                            "tsMs=${System.currentTimeMillis()} milestone=audio output buffer dequeued index=$outputIndex size=${bufferInfo.size} flags=${bufferInfo.flags} ptsUs=${bufferInfo.presentationTimeUs}",
+                        )
                         val outputBuffer = activeCodec.getOutputBuffer(outputIndex)
                         if (outputBuffer != null && bufferInfo.size > 0) {
                             val payload = ByteArray(bufferInfo.size)
@@ -220,6 +225,10 @@ object AudioEncoderNode {
                                     )
                                     firstOutputLogs += 1
                                 }
+                                Log.i(
+                                    TAG,
+                                    "tsMs=${System.currentTimeMillis()} milestone=audio access unit accepted size=${adtsPayload.size} ptsUs=${bufferInfo.presentationTimeUs}",
+                                )
                                 outputListener?.invoke(
                                     EncodedAccessUnit(
                                         data = adtsPayload,
@@ -244,7 +253,7 @@ object AudioEncoderNode {
                                 if (firstOutputLogs < 5) {
                                     Log.d(
                                         TAG,
-                                        "tsMs=${System.currentTimeMillis()} milestone=AAC config received event=${codecConfigEventCount} bytes=${bufferInfo.size} flags=${bufferInfo.flags} " +
+                                        "tsMs=${System.currentTimeMillis()} milestone=audio codec config received event=${codecConfigEventCount} bytes=${bufferInfo.size} flags=${bufferInfo.flags} " +
                                             "codecConfig=true first16=${toHex(payload, 16)}",
                                     )
                                     firstOutputLogs += 1
@@ -277,7 +286,7 @@ object AudioEncoderNode {
         ).also {
             Log.i(
                 TAG,
-                "tsMs=${System.currentTimeMillis()} milestone=AAC config received profile=${it.profile} sampleRateIndex=${it.sampleRateIndex} channelConfig=${it.channelConfig}",
+                "tsMs=${System.currentTimeMillis()} milestone=audio codec config received profile=${it.profile} sampleRateIndex=${it.sampleRateIndex} channelConfig=${it.channelConfig}",
             )
         }
     }
