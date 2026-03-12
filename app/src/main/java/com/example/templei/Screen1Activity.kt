@@ -11,6 +11,7 @@ import android.content.ServiceConnection
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.os.IBinder
+import android.os.SystemClock
 import android.text.InputType
 import android.util.Log
 import android.widget.Button
@@ -21,6 +22,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
 import com.example.templei.feature.camera.CameraFeature
 import com.example.templei.feature.export.CaptureCoordinator
 import com.example.templei.feature.export.ExportFeature
@@ -63,6 +65,9 @@ class Screen1Activity : ComponentActivity() {
     private val startupPhaseLines = mutableListOf<String>()
     private var streamSessionBinder: StreamSessionService.LocalBinder? = null
     private var isServiceBound = false
+    private var activeFailureDialog: AlertDialog? = null
+    private var lastFailureDialogMessage: String = ""
+    private var lastFailureDialogAtMs: Long = 0L
 
     private val streamServiceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
@@ -185,7 +190,7 @@ class Screen1Activity : ComponentActivity() {
             val result = ExportFeature.validateConfig(currentConfig)
             val endpointMessage = ExportFeature.testEndpoint(currentConfig)
             if (result.isValid) ExportFeature.saveConfig(this, currentConfig)
-            if (endpointMessage.startsWith("preflight failed:")) showBlockingEndpointError(endpointMessage)
+            if (endpointMessage.startsWith("preflight failed:")) showBlockingEndpointErrorSafely(endpointMessage)
             renderStatus()
         }
         resetPresetButton.setOnClickListener {
@@ -248,9 +253,9 @@ class Screen1Activity : ComponentActivity() {
                         appendStartupPhase(faultMessage)
                         appendStartupPhase("start-fault-config $startConfigSummary")
                         if (faultMessage.startsWith("preflight failed:")) {
-                            showBlockingEndpointError(faultMessage)
+                            showBlockingEndpointErrorSafely(faultMessage)
                         } else {
-                            showStartFailureError(faultMessage)
+                            showStartFailureErrorSafely(faultMessage)
                         }
                     }
                     renderStatus()
@@ -477,20 +482,43 @@ class Screen1Activity : ComponentActivity() {
         startupPhaseLines += "[$timestamp] $phase"
     }
 
-    private fun showBlockingEndpointError(message: String) {
-        AlertDialog.Builder(this)
-            .setTitle(R.string.obs_endpoint_malformed_title)
-            .setMessage(message)
-            .setPositiveButton(R.string.obs_ok_action, null)
-            .show()
+    private fun showBlockingEndpointErrorSafely(message: String) {
+        showFailureDialogSafely(titleRes = R.string.obs_endpoint_malformed_title, message = message)
     }
 
-    private fun showStartFailureError(message: String) {
-        AlertDialog.Builder(this)
-            .setTitle(R.string.obs_start_failure_title)
+    private fun showStartFailureErrorSafely(message: String) {
+        showFailureDialogSafely(titleRes = R.string.obs_start_failure_title, message = message)
+    }
+
+    private fun showFailureDialogSafely(titleRes: Int, message: String) {
+        if (isFinishing || isDestroyed || !lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) {
+            appendStartupPhase("dialog-suppressed state=${lifecycle.currentState} message=$message")
+            return
+        }
+
+        val nowMs = SystemClock.elapsedRealtime()
+        val duplicateBurst = message == lastFailureDialogMessage && (nowMs - lastFailureDialogAtMs) < 1200L
+        if (duplicateBurst) {
+            appendStartupPhase("dialog-suppressed duplicate message=$message")
+            return
+        }
+        lastFailureDialogMessage = message
+        lastFailureDialogAtMs = nowMs
+
+        activeFailureDialog?.dismiss()
+        activeFailureDialog = AlertDialog.Builder(this)
+            .setTitle(titleRes)
             .setMessage(message)
             .setPositiveButton(R.string.obs_ok_action, null)
-            .show()
+            .create()
+            .also { dialog ->
+                dialog.setOnDismissListener {
+                    if (activeFailureDialog == dialog) {
+                        activeFailureDialog = null
+                    }
+                }
+                dialog.show()
+            }
     }
 
     private fun updateStatus(value: String) {
@@ -503,7 +531,7 @@ class Screen1Activity : ComponentActivity() {
         startButton.isEnabled = !running
         stopButton.isEnabled = running && !recording
         pictureButton.isEnabled = running && !recording
-        recordButton.isEnabled = running
+        recordButton.isEnabled = false
         recordButton.text = if (recording) getString(R.string.camera_stop_record_button) else getString(R.string.camera_record_button)
     }
 }

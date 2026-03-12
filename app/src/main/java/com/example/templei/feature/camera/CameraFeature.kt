@@ -128,7 +128,7 @@ object CameraFeature {
             previewUseCase?.setSurfaceProvider(previewView.surfaceProvider)
             Log.i(
                 TAG,
-                "tsMs=${System.currentTimeMillis()} milestone=bind skipped mode=preview reason=already-bound composition=preview+imageCapture+videoCapture+imageAnalysis",
+                "tsMs=${System.currentTimeMillis()} milestone=bind skipped mode=preview reason=already-bound composition=preview+imageCapture",
             )
             onStarted()
             return
@@ -146,15 +146,6 @@ object CameraFeature {
         }
 
         val imageCaptureUseCase = ImageCapture.Builder().build()
-        val recorder = Recorder.Builder().setQualitySelector(QualitySelector.from(Quality.HD)).build()
-        val videoCaptureUseCase = VideoCapture.withOutput(recorder)
-
-        val imageAnalysisUseCase = ImageAnalysis.Builder()
-            // Keep analyzer frames aligned with current encoder profile expectation (1280x720).
-            .setTargetResolution(Size(1280, 720))
-            .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-            .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888)
-            .build()
 
         provider.unbindAll()
         Log.i(
@@ -170,26 +161,17 @@ object CameraFeature {
             selectedLensOption.toSelector(),
             preview,
             imageCaptureUseCase,
-            videoCaptureUseCase,
-            imageAnalysisUseCase,
-        )
-        imageAnalysisUseCase.setAnalyzer(analysisExecutor) { imageProxy ->
-            handleAnalysisFrame(imageProxy)
-        }
-        Log.i(
-            TAG,
-            "tsMs=${System.currentTimeMillis()} milestone=analysis-analyzer-registered mode=preview",
         )
 
         previewUseCase = preview
         imageCapture = imageCaptureUseCase
-        videoCapture = videoCaptureUseCase
-        imageAnalysis = imageAnalysisUseCase
+        videoCapture = null
+        imageAnalysis = null
         isBound = true
         bindMode = BindMode.Preview
         Log.i(
             TAG,
-            "tsMs=${System.currentTimeMillis()} milestone=bind success mode=preview composition=preview+imageCapture+videoCapture+imageAnalysis expected=${STREAM_ANALYSIS_EXPECTED_WIDTH}x${STREAM_ANALYSIS_EXPECTED_HEIGHT}",
+            "tsMs=${System.currentTimeMillis()} milestone=bind success mode=preview composition=preview+imageCapture expected=${STREAM_ANALYSIS_EXPECTED_WIDTH}x${STREAM_ANALYSIS_EXPECTED_HEIGHT}",
         )
         onStarted()
     }

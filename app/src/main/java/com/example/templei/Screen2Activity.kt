@@ -10,6 +10,7 @@ import android.content.Intent
 import android.content.ServiceConnection
 import android.os.Bundle
 import android.os.IBinder
+import android.os.SystemClock
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -20,6 +21,7 @@ import android.widget.EditText
 import android.widget.TextView
 import androidx.activity.ComponentActivity
 import androidx.activity.enableEdgeToEdge
+import androidx.lifecycle.Lifecycle
 import com.example.templei.feature.export.CaptureCoordinator
 import com.example.templei.feature.export.ExportFeature
 import com.example.templei.feature.export.StreamSessionService
@@ -56,6 +58,9 @@ class Screen2Activity : ComponentActivity() {
     private val startupPhaseLines = mutableListOf<String>()
     private var streamSessionBinder: StreamSessionService.LocalBinder? = null
     private var isServiceBound = false
+    private var activeFailureDialog: AlertDialog? = null
+    private var lastFailureDialogMessage: String = ""
+    private var lastFailureDialogAtMs: Long = 0L
 
     private val streamServiceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
@@ -131,7 +136,7 @@ class Screen2Activity : ComponentActivity() {
                 ExportFeature.saveConfig(this, currentConfig)
             }
             if (endpointMessage.startsWith("preflight failed:")) {
-                showBlockingEndpointError(endpointMessage)
+                showBlockingEndpointErrorSafely(endpointMessage)
             }
             renderStatus()
         }
@@ -195,9 +200,9 @@ class Screen2Activity : ComponentActivity() {
                         appendStartupPhase(faultMessage)
                         appendStartupPhase("start-fault-config $startConfigSummary")
                         if (faultMessage.startsWith("preflight failed:")) {
-                            showBlockingEndpointError(faultMessage)
+                            showBlockingEndpointErrorSafely(faultMessage)
                         } else {
-                            showStartFailureError(faultMessage)
+                            showStartFailureErrorSafely(faultMessage)
                         }
                     }
                     renderStatus()
@@ -363,20 +368,43 @@ class Screen2Activity : ComponentActivity() {
         startupPhaseLines += "[$timestamp] $phase"
     }
 
-    private fun showBlockingEndpointError(message: String) {
-        AlertDialog.Builder(this)
-            .setTitle(R.string.obs_endpoint_malformed_title)
-            .setMessage(message)
-            .setPositiveButton(R.string.obs_ok_action, null)
-            .show()
+    private fun showBlockingEndpointErrorSafely(message: String) {
+        showFailureDialogSafely(titleRes = R.string.obs_endpoint_malformed_title, message = message)
     }
 
-    private fun showStartFailureError(message: String) {
-        AlertDialog.Builder(this)
-            .setTitle(R.string.obs_start_failure_title)
+    private fun showStartFailureErrorSafely(message: String) {
+        showFailureDialogSafely(titleRes = R.string.obs_start_failure_title, message = message)
+    }
+
+    private fun showFailureDialogSafely(titleRes: Int, message: String) {
+        if (isFinishing || isDestroyed || !lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) {
+            appendStartupPhase("dialog-suppressed state=${lifecycle.currentState} message=$message")
+            return
+        }
+
+        val nowMs = SystemClock.elapsedRealtime()
+        val duplicateBurst = message == lastFailureDialogMessage && (nowMs - lastFailureDialogAtMs) < 1200L
+        if (duplicateBurst) {
+            appendStartupPhase("dialog-suppressed duplicate message=$message")
+            return
+        }
+        lastFailureDialogMessage = message
+        lastFailureDialogAtMs = nowMs
+
+        activeFailureDialog?.dismiss()
+        activeFailureDialog = AlertDialog.Builder(this)
+            .setTitle(titleRes)
             .setMessage(message)
             .setPositiveButton(R.string.obs_ok_action, null)
-            .show()
+            .create()
+            .also { dialog ->
+                dialog.setOnDismissListener {
+                    if (activeFailureDialog == dialog) {
+                        activeFailureDialog = null
+                    }
+                }
+                dialog.show()
+            }
     }
 
 }
